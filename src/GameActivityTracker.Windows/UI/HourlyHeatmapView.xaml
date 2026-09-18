@@ -1,0 +1,52 @@
+<UserControl x:Class="GameActivityTracker.Windows.UI.HourlyHeatmapView"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ MouseLeave="OnLeave">
+ <StackPanel Background="{DynamicResource HeatmapBackground}">
+  <TextBlock Text="24 小时活动" Foreground="{DynamicResource TextBrush}" FontSize="18" FontWeight="SemiBold"/>
+  <TextBlock Text="从 00:00 到 23:00 · 悬停或点击方块查看下方记录" Foreground="{DynamicResource TextBrush}" FontSize="12" Margin="0,8,0,16" TextWrapping="Wrap"/>
+  <StackPanel x:Name="HourlyArea" Background="{DynamicResource HeatmapBackground}">
+   <ScrollViewer x:Name="HourScroller" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto" CanContentScroll="False">
+    <ItemsControl ItemsSource="{Binding Hours}">
+     <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+     <ItemsControl.ItemTemplate><DataTemplate>
+      <StackPanel>
+       <Button Style="{StaticResource HeatmapTile}" Background="{Binding Color}" AutomationProperties.Name="{Binding AccessibleLabel}"
+        MouseEnter="OnHourEnter" GotKeyboardFocus="OnHourFocus" Click="OnHourClick">
+        <Button.ToolTip><ToolTip Style="{StaticResource HeatmapHoverTip}"><TextBlock Text="{Binding Label}" Foreground="White"/></ToolTip></Button.ToolTip>
+       </Button>
+       <TextBlock Text="{Binding Hour, StringFormat={}{0:00}}" Foreground="{DynamicResource TextBrush}" FontSize="10" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+      </StackPanel>
+     </DataTemplate></ItemsControl.ItemTemplate>
+    </ItemsControl>
+   </ScrollViewer>
+   <Grid Height="340" Margin="0,16,0,0">
+    <Border x:Name="HourCard" Width="340" Height="340" HorizontalAlignment="Left" VerticalAlignment="Top" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="18"
+     Visibility="{Binding DetailVisibility}">
+     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" DataContext="{Binding SelectedHour}">
+      <StackPanel>
+       <TextBlock Text="{Binding Date}" Foreground="{DynamicResource TextBrush}" FontSize="12"/>
+       <TextBlock Text="{Binding Title}" Foreground="{DynamicResource TextBrush}" FontSize="22" FontWeight="SemiBold" Margin="0,6,0,14"/>
+       <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+        <StackPanel><TextBlock Text="ACTIVE" Foreground="{DynamicResource TextBrush}" FontSize="10"/><TextBlock Text="{Binding Active}" Foreground="{DynamicResource TextBrush}" FontSize="22" Margin="0,4,0,0"/></StackPanel>
+        <StackPanel Grid.Column="1"><TextBlock Text="RUNNING" Foreground="{DynamicResource TextBrush}" FontSize="10"/><TextBlock Text="{Binding Running}" Foreground="{DynamicResource TextBrush}" FontSize="22" Margin="0,4,0,0"/></StackPanel>
+       </Grid>
+       <TextBlock Text="{Binding OtherStates}" Foreground="{DynamicResource TextBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,12,0,8"/>
+       <TextBlock Text="{Binding Notice}" Foreground="{DynamicResource TextBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+       <ItemsControl ItemsSource="{Binding Games}"><ItemsControl.ItemTemplate><DataTemplate>
+        <StackPanel Margin="0,0,0,10"><TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding Durations}" Foreground="{DynamicResource TextBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,3,0,0"/></StackPanel>
+       </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+       <ItemsControl ItemsSource="{Binding Records}"><ItemsControl.ItemTemplate><DataTemplate>
+        <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="0,8" Margin="0,2,0,0"><StackPanel>
+         <TextBlock Text="{Binding Game}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap"/>
+         <TextBlock Text="{Binding TimeRange}" Foreground="{DynamicResource TextBrush}" FontSize="10" Margin="0,4,0,0" TextWrapping="Wrap"/>
+         <TextBlock Foreground="{DynamicResource TextBrush}" FontSize="11" Margin="0,4,0,0"><Run Text="{Binding State}"/><Run Text=" · "/><Run Text="{Binding Duration}"/></TextBlock>
+        </StackPanel></Border>
+       </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+      </StackPanel>
+     </ScrollViewer>
+    </Border>
+   </Grid>
+  </StackPanel>
+  <TextBlock Foreground="{DynamicResource TextBrush}" Text="颜色表示每小时活跃时长：0 / ≤5m / ≤15m / ≤30m / ≤45m / 45m+" FontSize="11" Margin="0,14,0,0" TextWrapping="Wrap"/>
+ </StackPanel>
+</UserControl>

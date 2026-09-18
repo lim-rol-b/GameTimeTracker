@@ -1,0 +1,1 @@
+<Project><PropertyGroup><TargetFramework>net8.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><LangVersion>12</LangVersion><EnableWindowsTargeting>true</EnableWindowsTargeting><Deterministic>true</Deterministic><DebugType Condition="'$(Configuration)' == 'Release'">embedded</DebugType></PropertyGroup></Project>

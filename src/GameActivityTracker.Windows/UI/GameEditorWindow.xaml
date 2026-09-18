@@ -1,0 +1,15 @@
+<Window x:Class="GameActivityTracker.Windows.UI.GameEditorWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Game / process rules" Width="1100" Height="780" MinWidth="880" MinHeight="580" WindowStartupLocation="CenterOwner">
+ <DockPanel Margin="26">
+  <StackPanel DockPanel.Dock="Top"><TextBlock Text="游戏与进程规则" FontSize="25" FontWeight="SemiBold" Margin="0,0,0,16"/>
+   <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel Margin="0,0,20,0"><TextBlock Text="游戏名称"/><TextBox Text="{Binding Game.Name, UpdateSourceTrigger=PropertyChanged}"/></StackPanel><StackPanel Grid.Column="1"><TextBlock Text="Steam AppID（仅身份元数据，可留空）"/><TextBox Text="{Binding Game.SteamAppId}"/></StackPanel></Grid>
+   <TextBlock Text="主要可执行文件"/><DockPanel><Button DockPanel.Dock="Right" Content="选择 exe…" Click="Browse" Margin="12,4,0,12"/><TextBox Text="{Binding Game.ExecutablePath,UpdateSourceTrigger=PropertyChanged}"/></DockPanel>
+   <DockPanel><Button DockPanel.Dock="Right" Content="选择 Minecraft 目录…" Click="BrowseMinecraft" Margin="12,4,0,12"/><TextBox Text="{Binding Game.MinecraftDirectory, UpdateSourceTrigger=PropertyChanged}" ToolTip="选择 PCL 使用的 .minecraft 目录可识别其中全部版本；选择 versions 下的单个版本目录则只记录该版本。"/></DockPanel>
+   <CheckBox Content="自动识别游戏目录内的真实进程（排除启动器和辅助工具）" IsChecked="{Binding Game.DetectRelatedExecutables}"/>
+   <TextBlock Text="规则内非空条件同时满足；多个规则任一满足即关联。所有关联进程退出后结束会话。优先级越高越先匹配。" TextWrapping="Wrap" Foreground="{DynamicResource TextBrush}" Margin="0,2,0,8"/>
+   <TextBlock Text="Minecraft / PCL 可选择 .minecraft 识别全部版本，或选择单个版本目录。Java 必须符合 Minecraft 客户端参数和游戏目录；权限不足时不会只凭进程名猜测。" TextWrapping="Wrap" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,12"/>
+   <StackPanel Orientation="Horizontal" Margin="0,0,0,12"><Button Content="＋ 添加进程规则" Click="AddRule"/><Button Content="移除选中规则" Click="RemoveRule"/></StackPanel>
+  </StackPanel>
+  <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0"><Button Content="取消" IsCancel="True"/><Button Content="保存游戏" Background="{DynamicResource AccentSoftBrush}" Click="Save" IsDefault="True"/></StackPanel>
+  <DataGrid x:Name="RulesGrid" ItemsSource="{Binding Rules}" CanUserAddRows="False"><DataGrid.Columns><DataGridCheckBoxColumn Header="启用" Binding="{Binding Enabled}" Width="55"/><DataGridTextColumn Header="exe 名称" Binding="{Binding ExecutableName}" Width="130"/><DataGridTextColumn Header="完整路径（可空）" Binding="{Binding ExecutablePath}" Width="240"/><DataGridTextColumn Header="路径包含" Binding="{Binding PathContains}" Width="130"/><DataGridTextColumn Header="Minecraft 目录" Binding="{Binding MinecraftRootDirectory}" Width="180"/><DataGridTextColumn Header="命令行包含" Binding="{Binding CommandLineContains}" Width="190"/><DataGridTextColumn Header="Steam AppID 条件" Binding="{Binding SteamAppId}" Width="130"/><DataGridTextColumn Header="优先级" Binding="{Binding Priority}" Width="80"/></DataGrid.Columns></DataGrid>
+ </DockPanel>
+</Window>

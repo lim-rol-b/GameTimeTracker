@@ -1,0 +1,20 @@
+<Project>
+  <!-- Bind the native apphost directly to the managed entry point in runtime/.
+       No second process, extraction, or installed .NET runtime is required. -->
+  <Target Name="ArrangePortableRuntime" AfterTargets="ComputeFilesToPublish">
+    <Error Condition="'$(PublishSingleFile)' == 'true'" Text="Portable layout requires PublishSingleFile=false."/>
+    <Error Condition="'$(SelfContained)' != 'true'" Text="Portable layout requires SelfContained=true."/>
+    <ItemGroup>
+      <ResolvedFileToPublish Condition="'%(ResolvedFileToPublish.RelativePath)' != '$(AssemblyName).exe'">
+        <RelativePath>runtime/%(ResolvedFileToPublish.RelativePath)</RelativePath>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+  <Target Name="BindPortableAppHost" AfterTargets="Publish">
+    <CreateAppHost AppHostSourcePath="$(AppHostSourcePath)"
+                   AppHostDestinationPath="$(PublishDir)$(AssemblyName).exe"
+                   AppBinaryName="runtime/$(AssemblyName).dll"
+                   IntermediateAssembly="@(IntermediateAssembly->'%(FullPath)')"
+                   WindowsGraphicalUserInterface="true"/>
+  </Target>
+</Project>
