@@ -16,3 +16,16 @@ jobs:
         with:
           name: GameActivityTracker-win-x64
           path: artifacts/win-x64
+  native:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --manifest-path native/Cargo.toml --workspace
+      - run: cargo build --release --manifest-path native/Cargo.toml -p gat-app
+      - run: ./scripts/smoke-test-native.ps1
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GameTimeTracker-native-win-x64
+          path: native/target/release/gat.exe

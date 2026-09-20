@@ -1,189 +1,319 @@
 using System.Diagnostics;
-using GameActivityTracker.Core.GamePresence;
-using GameActivityTracker.Core.Tracking;
+using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using GameActivityTracker.Core;
 using GameActivityTracker.Data;
-using GameActivityTracker.Windows.GamePresence;
-using GameActivityTracker.Windows.Tracking;
 
 namespace GameActivityTracker.Windows.Services;
 
 public sealed record LiveGame(string GameId, ActivityState State, double ActiveSeconds, double RunningSeconds, double InputIdleSeconds);
+
+/// <summary>Live games plus the engine-reported error from a single status round trip.</summary>
+public sealed record LiveSnapshot(IReadOnlyList<LiveGame> Games, string? Error);
+
+/// <summary>
+/// Viewer facade over the Rust lightweight engine. Tracking is owned by the native
+/// engine; this client reads the shared SQLite database and the engine's loopback
+/// control channel so the WPF interface can show live state and forward commands.
+/// The public surface is unchanged so the existing UI needs no edits.
+/// </summary>
 public sealed class TrackingService : IDisposable
 {
-    private readonly object _gate = new();
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private readonly TrackerDatabase _database;
     private readonly ITrackerLog _log;
-    private readonly SessionManager _sessions = new();
-    private readonly IGamePresenceProvider _presence;
-    private readonly IForegroundWindowDetector _foreground = new ForegroundWindowDetector();
-    private readonly IKeyboardMouseActivityProvider _keyboard = new KeyboardMouseActivityProvider();
-    private readonly IControllerActivityProvider _controller = new ControllerActivityProvider();
-    private readonly CancellationTokenSource _stop = new();
-    private readonly List<GameSession> _pending = [];
-    private Task? _worker;
-    private TrackerSettings _settings;
-    private IReadOnlyList<GameProcessRule> _rules;
-    private IReadOnlyList<Game> _games;
-    private DateTimeOffset _lastTick=DateTimeOffset.UtcNow;
-    private DateTimeOffset _lastScan=DateTimeOffset.MinValue;
-    private DateTimeOffset _lastSave=DateTimeOffset.MinValue;
-    private long _lastMono=Stopwatch.GetTimestamp();
-    private bool _suspended;
-    private bool _locked;
+    private readonly string _dataDirectory;
+    private readonly object _gate = new();
+    private (int Port, string Token)? _handshake;
+    private DateTime _handshakeStamp;
+    private long _handshakeLength = -1;
     private bool _disposed;
-    private string? _error;
-    private DateTimeOffset? _lastInput;
-    public string? Error { get { lock(_gate) return _error; } }
-    public TrackingService(TrackerDatabase database,ITrackerLog log)
+
+    public TrackingService(TrackerDatabase database, ITrackerLog log)
     {
-        _database=database; _log=log; _settings=database.GetSettings(); _rules=database.GetRules(); _games=database.GetGames();
-        _sessions.IdleThreshold=TimeSpan.FromSeconds(_settings.IdleThresholdSeconds);
-        _presence=new ProcessProvider(()=>_rules,()=>_games,log);
-        _presence.GameStarted+=(_,e)=>
-        {
-            var observation=Observe(e.GameId,e.DetectedAt);
-            _sessions.Start(e.GameId,e.DetectedAt,observation,"Observed; no pre-detection activity inferred");
-            _log.Write($"Session started: {e.GameId}");
-        };
-        _presence.GameStopped+=(_,e)=>
-        {
-            var session=_sessions.Stop(e.GameId,e.DetectedAt);
-            if(session is not null) _pending.Add(session);
-        };
+        _database = database;
+        _log = log;
+        _dataDirectory = Path.GetDirectoryName(database.DatabasePath) ?? AppContext.BaseDirectory;
     }
-    public void Start() => _worker=Task.Run(Run);
-    public IReadOnlyList<LiveGame> Snapshot()
+
+    public string? Error => QueryStatus()?.Error;
+
+    /// <summary>Start the native engine when it is not already running (best effort).</summary>
+    public void Start()
     {
-        lock(_gate) return _sessions.Sessions.Select(s=>new LiveGame(s.GameId,_sessions.State(s.GameId),s.ActiveDuration,s.RunningDuration,
-            Math.Max(0,_lastInput is {} input ? (_lastTick-input).TotalSeconds:0))).ToList();
-    }
-    public void Reload()
-    {
-        lock(_gate)
-        {
-            var now=DateTimeOffset.UtcNow;
-            foreach(var s in _sessions.Sessions) _sessions.Advance(s.GameId,now,Observe(s.GameId,now));
-            Save(now);
-            _settings=_database.GetSettings(); _rules=_database.GetRules();_games=_database.GetGames();
-            _sessions.IdleThreshold=TimeSpan.FromSeconds(_settings.IdleThresholdSeconds);
-            _controller.Reset(); _lastScan=DateTimeOffset.MinValue;
-        }
-    }
-    public void Suspend(string reason)
-    {
-        lock(_gate)
-        {
-            _suspended=true;
-            try
-            {
-                var now=DateTimeOffset.UtcNow;
-                foreach(var s in _sessions.Sessions) _sessions.Advance(s.GameId,now,new(null,null));
-                Save(now); _log.Write(reason+": observation paused; subsequent time is UNKNOWN");
-            }
-            catch(Exception ex) { _error=ex.Message; _log.Write("Suspend save failed",ex); }
-        }
-    }
-    public void Resume()
-    {
-        lock(_gate)
-        {
-            var now=DateTimeOffset.UtcNow;
-            foreach(var s in _sessions.Sessions) _sessions.Advance(s.GameId,now,new(null,null));
-            _suspended=false; _lastTick=now; _lastMono=Stopwatch.GetTimestamp(); _lastScan=DateTimeOffset.MinValue; _controller.Reset();
-        }
-    }
-    public void SetLocked(bool locked)
-    {
-        lock(_gate)
-        {
-            _locked=locked;
-            var now=DateTimeOffset.UtcNow;
-            foreach(var s in _sessions.Sessions) _sessions.Advance(s.GameId,now,new(locked?false:null,null));
-            _controller.Reset();
-        }
-    }
-    public void DeleteGame(string gameId)
-    {
-        lock(_gate)
-        {
-            var now=DateTimeOffset.UtcNow;
-            var ended=_sessions.Stop(gameId,now,"GameDeleted");
-            if(ended is not null) _pending.Add(ended);
-            Save(now);_database.DeleteGame(gameId);_rules=_database.GetRules();_games=_database.GetGames();_lastScan=DateTimeOffset.MinValue;
-        }
-    }
-    private async Task Run()
-    {
-        using var timer=new PeriodicTimer(TimeSpan.FromMilliseconds(250));
+        if (_disposed) return;
+        if (Environment.GetCommandLineArgs().Contains("--smoke-test", StringComparer.OrdinalIgnoreCase)) return;
+        if (IsEngineReachable()) return;
+        // A leftover handshake from a crashed engine must not block a fresh start.
         try
         {
-            while(await timer.WaitForNextTickAsync(_stop.Token))
+            var control = Path.Combine(_dataDirectory, "control.json");
+            if (File.Exists(control)) File.Delete(control);
+        }
+        catch (Exception ex) { _log.Write("Unable to clear a stale control handshake", ex); }
+        try
+        {
+            var candidate = FindEngine();
+            if (candidate is null)
             {
-                lock(_gate)
-                {
-                    if(_suspended) continue;
-                    try { Tick(); _error=null; }
-                    catch(Exception ex) { _error=ex.Message; _log.Write("Tracking tick failed; will retry",ex); }
-                }
+                _log.Write("Native engine gat.exe not found next to the viewer or under native/target; running in viewer mode");
+                return;
+            }
+            var startInfo = new ProcessStartInfo(candidate, "--background")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = Path.GetDirectoryName(candidate) ?? ViewerDirectory(),
+            };
+            // Tell the engine which viewer to open from its tray and which icon to use.
+            if (ViewerExecutable() is { } viewer) startInfo.Environment["GAT_UI_COMMAND"] = viewer;
+            var icon = FindViewerIcon();
+            if (icon is not null) startInfo.Environment["GAT_ICON_PATH"] = icon;
+            var process = Process.Start(startInfo);
+            _log.Write(process is null ? "Native engine start returned no process" : $"Started native engine (pid {process.Id}) from {candidate}");
+        }
+        catch (Exception ex) { _log.Write("Unable to start native engine", ex); }
+    }
+
+    /// <summary>Directory of the real executable (package root), not the managed runtime/ folder.</summary>
+    private static string ViewerDirectory()
+    {
+        if (ViewerExecutable() is { } process && Path.GetDirectoryName(process) is { Length: > 0 } directory) return directory;
+        return AppContext.BaseDirectory;
+    }
+
+    private static string? ViewerExecutable()
+    {
+        var process = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(process)) return null;
+        return Path.GetFileName(process).Equals("dotnet.exe", StringComparison.OrdinalIgnoreCase) ? null : process;
+    }
+
+    private static string? FindEngine()
+    {
+        foreach (var directory in new[] { ViewerDirectory(), AppContext.BaseDirectory })
+        {
+            var direct = Path.Combine(directory, "gat.exe");
+            if (File.Exists(direct)) return direct;
+        }
+        var configured = Environment.GetEnvironmentVariable("GAT_ENGINE_PATH");
+        if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured)) return configured;
+        foreach (var relative in new[]
+        {
+            "native/target/release/gat.exe",
+            "native/target/debug/gat.exe",
+            "artifacts/native/gat.exe",
+        })
+        {
+            var found = FindUpward(relative);
+            if (found is not null) return found;
+        }
+        return null;
+    }
+
+    private static string? FindViewerIcon()
+    {
+        foreach (var directory in new[] { ViewerDirectory(), AppContext.BaseDirectory })
+        {
+            var direct = Path.Combine(directory, "App.ico");
+            if (File.Exists(direct)) return direct;
+        }
+        return FindUpward("src/GameActivityTracker.Windows/Assets/App.ico");
+    }
+
+    private static string? FindUpward(string relativePath)
+    {
+        foreach (var start in new[] { ViewerDirectory(), AppContext.BaseDirectory })
+        {
+            var directory = new DirectoryInfo(start);
+            for (var depth = 0; depth < 8 && directory is not null; depth++, directory = directory.Parent)
+            {
+                var candidate = Path.Combine(directory.FullName, relativePath);
+                if (File.Exists(candidate)) return candidate;
             }
         }
-        catch(OperationCanceledException) { }
+        return null;
     }
-    private void Tick()
+
+    private bool IsEngineReachable()
     {
-        var now=DateTimeOffset.UtcNow;
-        var elapsed=Stopwatch.GetElapsedTime(_lastMono).TotalSeconds;
-        var wall=(now-_lastTick).TotalSeconds;
-        if(elapsed>10 || wall>10 || wall<0 || Math.Abs(wall-elapsed)>2)
+        var request = BuildRequest("ping");
+        if (request is null) return false;
+        try
         {
-            if(wall<0) EndAll(_lastTick,"ClockMovedBackwards");
-            else
+            using var client = new TcpClient();
+            if (!client.ConnectAsync("127.0.0.1", request.Value.Port).Wait(TimeSpan.FromSeconds(1))) return false;
+            using var stream = client.GetStream();
+            var payload = Encoding.UTF8.GetBytes(request.Value.Json + "\n");
+            stream.Write(payload, 0, payload.Length);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            var line = reader.ReadLine();
+            if (string.IsNullOrWhiteSpace(line)) return false;
+            using var response = JsonDocument.Parse(line);
+            return response.RootElement.TryGetProperty("ok", out var ok) && ok.GetBoolean();
+        }
+        catch { return false; }
+    }
+
+    public IReadOnlyList<LiveGame> Snapshot()
+    {
+        var status = QueryStatus();
+        if (status?.Games is null) return Array.Empty<LiveGame>();
+        var result = new List<LiveGame>(status.Games.Length);
+        foreach (var game in status.Games)
+            result.Add(new LiveGame(game.GameId, ParseState(game.State), game.ActiveSeconds, game.RunningSeconds, 0));
+        return result;
+    }
+
+    /// <summary>Fetch live state off the UI thread so periodic refreshes never block rendering.</summary>
+    public async Task<LiveSnapshot> PollAsync()
+    {
+        var status = await QueryStatusAsync().ConfigureAwait(false);
+        if (status?.Games is null) return new LiveSnapshot(Array.Empty<LiveGame>(), status?.Error);
+        var result = new List<LiveGame>(status.Games.Length);
+        foreach (var game in status.Games)
+            result.Add(new LiveGame(game.GameId, ParseState(game.State), game.ActiveSeconds, game.RunningSeconds, 0));
+        return new LiveSnapshot(result, status.Error);
+    }
+
+    public void Reload() => SendCommand("reload");
+    public void Suspend(string reason) => SendCommand("suspend");
+    public void Resume() => SendCommand("resume");
+    // The native engine receives session lock/unlock notifications itself.
+    public void SetLocked(bool locked) { }
+    public void DeleteGame(string gameId)
+    {
+        _database.DeleteGame(gameId);
+        SendCommand("reload");
+    }
+    public void Dispose() => _disposed = true;
+
+    private static ActivityState ParseState(string? value) => value?.ToUpperInvariant() switch
+    {
+        "ACTIVE" => ActivityState.ACTIVE,
+        "IDLE" => ActivityState.IDLE,
+        "BACKGROUND" => ActivityState.BACKGROUND,
+        _ => ActivityState.UNKNOWN,
+    };
+
+    private void SendCommand(string command)
+    {
+        var request = BuildRequest(command);
+        if (request is null) return;
+        try
+        {
+            using var client = new TcpClient();
+            if (!client.ConnectAsync("127.0.0.1", request.Value.Port).Wait(TimeSpan.FromSeconds(1))) return;
+            using var stream = client.GetStream();
+            var payload = Encoding.UTF8.GetBytes(request.Value.Json + "\n");
+            stream.Write(payload, 0, payload.Length);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            _ = reader.ReadLine();
+        }
+        catch (Exception ex) { _log.Write("Engine command failed: " + command, ex); InvalidateHandshake(); }
+    }
+
+    private EngineStatus? QueryStatus()
+    {
+        var request = BuildRequest("status");
+        if (request is null) return null;
+        try
+        {
+            using var client = new TcpClient();
+            if (!client.ConnectAsync("127.0.0.1", request.Value.Port).Wait(TimeSpan.FromSeconds(1))) { InvalidateHandshake(); return null; }
+            using var stream = client.GetStream();
+            var payload = Encoding.UTF8.GetBytes(request.Value.Json + "\n");
+            stream.Write(payload, 0, payload.Length);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            var line = reader.ReadLine();
+            if (string.IsNullOrWhiteSpace(line)) return null;
+            using var response = JsonDocument.Parse(line);
+            if (!response.RootElement.TryGetProperty("ok", out var ok) || !ok.GetBoolean()) return null;
+            if (!response.RootElement.TryGetProperty("data", out var data)) return null;
+            return data.Deserialize<EngineStatus>(JsonOptions);
+        }
+        catch (Exception ex) { _log.Write("Engine status query failed", ex); InvalidateHandshake(); return null; }
+    }
+
+    /// <summary>Same as <see cref="QueryStatus"/> but awaits the socket so the UI thread never blocks.</summary>
+    private async Task<EngineStatus?> QueryStatusAsync()
+    {
+        var request = BuildRequest("status");
+        if (request is null) return null;
+        try
+        {
+            using var client = new TcpClient();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+            await client.ConnectAsync("127.0.0.1", request.Value.Port, timeout.Token).ConfigureAwait(false);
+            using var stream = client.GetStream();
+            var payload = Encoding.UTF8.GetBytes(request.Value.Json + "\n");
+            await stream.WriteAsync(payload, timeout.Token).ConfigureAwait(false);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            var line = await reader.ReadLineAsync(timeout.Token).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(line)) return null;
+            using var response = JsonDocument.Parse(line);
+            if (!response.RootElement.TryGetProperty("ok", out var ok) || !ok.GetBoolean()) return null;
+            if (!response.RootElement.TryGetProperty("data", out var data)) return null;
+            return data.Deserialize<EngineStatus>(JsonOptions);
+        }
+        catch (Exception ex) { _log.Write("Engine status query failed", ex); InvalidateHandshake(); return null; }
+    }
+
+    /// <summary>Drop the cached handshake so a restarted engine's new port/token are picked up.</summary>
+    private void InvalidateHandshake()
+    {
+        lock (_gate) { _handshake = null; _handshakeStamp = default; _handshakeLength = -1; }
+    }
+
+    private (int Port, string Json)? BuildRequest(string command)
+    {
+        try
+        {
+            var path = Path.Combine(_dataDirectory, "control.json");
+            if (!File.Exists(path)) return null;
+            var info = new FileInfo(path);
+            int port;
+            string token;
+            lock (_gate)
             {
-                // Preserve the running interval, but do not infer activity during unobserved time.
-                foreach(var s in _sessions.Sessions)
+                if (_handshake is null || info.LastWriteTimeUtc != _handshakeStamp || info.Length != _handshakeLength)
                 {
-                    _sessions.Advance(s.GameId,_lastTick,new(null,null));
-                    _sessions.Advance(s.GameId,now,new(null,null));
+                    using var document = JsonDocument.Parse(File.ReadAllText(path));
+                    port = document.RootElement.GetProperty("port").GetInt32();
+                    token = document.RootElement.TryGetProperty("token", out var tokenElement) ? tokenElement.GetString() ?? "" : "";
+                    _handshake = (port, token);
+                    _handshakeStamp = info.LastWriteTimeUtc;
+                    _handshakeLength = info.Length;
                 }
-                _controller.Reset();
+                else
+                {
+                    port = _handshake.Value.Port;
+                    token = _handshake.Value.Token;
+                }
             }
-            _lastScan=DateTimeOffset.MinValue;
+            var json = JsonSerializer.Serialize(new Dictionary<string, string> { ["token"] = token, ["command"] = command });
+            return (port, json);
         }
-        _lastTick=now; _lastMono=Stopwatch.GetTimestamp();
-        var keyboard=_keyboard.GetLastInput(now);
-        var controller=_settings.EnableControllerDetection ? _controller.Poll(now,_settings.ControllerDeadZone):null;
-        _lastInput=keyboard is null ? controller : controller is null ? keyboard : keyboard>controller ? keyboard:controller;
-        if((now-_lastScan).TotalSeconds>=_settings.ProcessScanIntervalSeconds) { _presence.Scan(now); _lastScan=now; }
-        foreach(var s in _sessions.Sessions)
-        {
-            var old=_sessions.State(s.GameId);
-            _sessions.Advance(s.GameId,now,Observe(s.GameId,now));
-            var state=_sessions.State(s.GameId);
-            if(old!=state) _log.Write($"{s.GameId}: {old} -> {state}");
-        }
-        if((now-_lastSave).TotalSeconds>=5 || _pending.Count>0) Save(now);
+        catch (Exception ex) { _log.Write("Engine handshake unavailable", ex); return null; }
     }
-    private ActivityObservation Observe(string game,DateTimeOffset now)
+
+    private sealed class EngineStatus
     {
-        if(_locked) return new(false,null);
-        if(_suspended) return new(null,null);
-        var foreground=_foreground.GetForegroundProcessId();
-        return new(foreground is null ? null : _presence.RunningGames.TryGetValue(game,out var pids) && pids.Contains(foreground.Value),_lastInput);
+        [JsonPropertyName("running")] public bool Running { get; set; }
+        [JsonPropertyName("suspended")] public bool Suspended { get; set; }
+        [JsonPropertyName("locked")] public bool Locked { get; set; }
+        [JsonPropertyName("error")] public string? Error { get; set; }
+        [JsonPropertyName("games")] public EngineGame[]? Games { get; set; }
     }
-    private void Save(DateTimeOffset now)
+
+    private sealed class EngineGame
     {
-        _database.SaveSessions(_pending.Concat(_sessions.Sessions)); _pending.Clear(); _lastSave=now;
-    }
-    private void EndAll(DateTimeOffset now,string reason)
-    {
-        _pending.AddRange(_sessions.StopAll(now,reason)); _presence.Reset(); _controller.Reset();
-        Save(now);
-    }
-    public void Dispose()
-    {
-        if(_disposed) return; _disposed=true; _stop.Cancel();
-        _worker?.GetAwaiter().GetResult();
-        lock(_gate) { try { EndAll(DateTimeOffset.UtcNow,"TrackerExit"); } catch(Exception ex) { _log.Write("Final checkpoint failed",ex); } }
-        _stop.Dispose();
+        [JsonPropertyName("gameId")] public string GameId { get; set; } = "";
+        [JsonPropertyName("name")] public string Name { get; set; } = "";
+        [JsonPropertyName("state")] public string State { get; set; } = "";
+        [JsonPropertyName("activeSeconds")] public double ActiveSeconds { get; set; }
+        [JsonPropertyName("runningSeconds")] public double RunningSeconds { get; set; }
     }
 }

@@ -1,11 +1,31 @@
 <Project>
+  <!-- The viewer ships a single UI culture. Keep only that culture's framework
+       satellite resources: the self-contained WindowsDesktop runtime otherwise
+       carries ~14 copies of the localized PresentationFramework/System.Windows.Forms
+       strings, adding ~16 MB to the portable package for no user benefit. -->
+  <PropertyGroup>
+    <AllowedSatelliteLanguages Condition="'$(AllowedSatelliteLanguages)' == ''">zh-Hans</AllowedSatelliteLanguages>
+  </PropertyGroup>
+
   <!-- Bind the native apphost directly to the managed entry point in runtime/.
        No second process, extraction, or installed .NET runtime is required. -->
   <Target Name="ArrangePortableRuntime" AfterTargets="ComputeFilesToPublish">
     <Error Condition="'$(PublishSingleFile)' == 'true'" Text="Portable layout requires PublishSingleFile=false."/>
     <Error Condition="'$(SelfContained)' != 'true'" Text="Portable layout requires SelfContained=true."/>
+    <!-- SatelliteResourceLanguages filters NuGet restore, but a self-contained runtime pack
+         still contributes its own *.resources.dll files, so filter the final publish item
+         list here too. A normalized relative path keeps this correct regardless of whether
+         the SDK emitted forward or backward slashes. -->
     <ItemGroup>
-      <ResolvedFileToPublish Condition="'%(ResolvedFileToPublish.RelativePath)' != '$(AssemblyName).exe'">
+      <ResolvedFileToPublish Update="@(ResolvedFileToPublish)">
+        <GatRelativePath>$([System.String]::Copy('%(RelativePath)').Replace('\','/'))</GatRelativePath>
+      </ResolvedFileToPublish>
+      <_GatSatelliteToDrop Include="@(ResolvedFileToPublish)"
+          Condition="$([System.String]::Copy('%(ResolvedFileToPublish.GatRelativePath)').EndsWith('.resources.dll')) And !$([System.String]::Copy('%(ResolvedFileToPublish.GatRelativePath)').StartsWith('$(AllowedSatelliteLanguages)/'))"/>
+      <ResolvedFileToPublish Remove="@(_GatSatelliteToDrop)"/>
+    </ItemGroup>
+    <ItemGroup>
+      <ResolvedFileToPublish Condition="'%(ResolvedFileToPublish.RelativePath)' != '$(AssemblyName).exe' And '%(ResolvedFileToPublish.RelativePath)' != 'gat.exe' And '%(ResolvedFileToPublish.RelativePath)' != 'App.ico'">
         <RelativePath>runtime/%(ResolvedFileToPublish.RelativePath)</RelativePath>
       </ResolvedFileToPublish>
     </ItemGroup>

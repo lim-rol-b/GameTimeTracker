@@ -62,8 +62,6 @@ public sealed record TrackerSettings
     public int IdleThresholdSeconds { get; set; } = 60;
     public int ProcessScanIntervalSeconds { get; set; } = 2;
     public bool StartWithWindows { get; set; }
-    public bool MinimizeToTray { get; set; } = true;
-    public bool RunInBackground { get; set; } = true;
     public bool EnableControllerDetection { get; set; } = true;
     public double ControllerDeadZone { get; set; } = 0.20;
     public void Validate()

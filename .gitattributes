@@ -1,0 +1,18 @@
+# Normalize line endings. The repository stores LF; Windows sources check out as CRLF.
+* text=auto
+*.cs       text eol=crlf
+*.xaml     text eol=crlf
+*.csproj   text eol=crlf
+*.props    text eol=crlf
+*.targets  text eol=crlf
+*.sln      text eol=crlf
+*.manifest text eol=crlf
+*.ps1      text eol=crlf
+*.rs       text eol=lf
+*.toml     text eol=lf
+*.lock     text eol=lf
+*.md       text eol=lf
+*.yml      text eol=lf
+*.json     text eol=lf
+*.png      binary
+*.ico      binary

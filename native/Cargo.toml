@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/gat-core",
+    "crates/gat-data",
+    "crates/gat-platform",
+    "crates/gat-app",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.82"
+repository = "https://github.com/lim-rol-b/GameTimeTracker"
+description = "Game Activity Tracker native engine and lightweight background mode"
+
+[workspace.dependencies]
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde", "clock"] }
+chrono-tz = "0.10"
+clap = { version = "4", features = ["derive"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sysinfo = "0.39"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+
+# The background lightweight mode favours a small, self-contained binary.
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "z"
+strip = true
+
+[profile.dev]
+opt-level = 1

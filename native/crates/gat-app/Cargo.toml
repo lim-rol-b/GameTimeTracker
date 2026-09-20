@@ -1,0 +1,21 @@
+[package]
+name = "gat-app"
+description = "Game Activity Tracker lightweight background mode"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "gat"
+path = "src/main.rs"
+
+[dependencies]
+gat-core = { path = "../gat-core" }
+gat-data = { path = "../gat-data" }
+gat-platform = { path = "../gat-platform" }
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
