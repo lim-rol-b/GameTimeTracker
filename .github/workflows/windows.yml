@@ -4,6 +4,7 @@ jobs:
   build:
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         package: [portable, lite]
     steps:
@@ -18,8 +19,11 @@ jobs:
       - run: |
           $folder = if ('${{ matrix.package }}' -eq 'lite') { 'win-x64-lite' } else { 'win-x64' }
           ./scripts/smoke-test.ps1 -Executable "artifacts/$folder/GameActivityTracker.exe"
-          & "./artifacts/$folder/runtime/docs/compact-runtime.ps1"
-          ./scripts/smoke-test.ps1 -Executable "artifacts/$folder/GameActivityTracker.exe"
+          # Hosted runner workspaces may use ReFS. LZX requires an NTFS volume.
+          $compressed = Join-Path $env:TEMP ("GameActivityTracker.Compression." + [guid]::NewGuid())
+          Copy-Item "artifacts/$folder" $compressed -Recurse
+          & "$compressed/runtime/docs/compact-runtime.ps1"
+          ./scripts/smoke-test.ps1 -Executable "$compressed/GameActivityTracker.exe"
         shell: pwsh
       - uses: actions/upload-artifact@v4
         with:
