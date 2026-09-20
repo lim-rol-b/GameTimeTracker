@@ -38,6 +38,8 @@ macOS / Linux 可以交叉编译 Windows 目标并运行核心测试，但不能
 
 ## 从源码构建
 
+如需直接使用，可前往 [v1.0.0 发布页面](https://github.com/lim-rol-b/GameTimeTracker/releases/tag/v1.0.0) 下载 `GameTimeTracker-1.0.0-win-x64.zip`。完整解压后运行 `GameActivityTracker.exe`，并保留同目录的 `runtime` 文件夹。
+
 在仓库根目录执行：
 
 ```powershell

@@ -22,6 +22,7 @@ try {
     New-Item -ItemType Directory -Path "$staging/runtime/docs" | Out-Null
     Copy-Item scripts/PORTABLE-README.txt "$staging/runtime/docs/README.txt"
     Copy-Item UPGRADE.md "$staging/runtime/docs/UPGRADE.md"
+    Copy-Item LICENSE "$staging/runtime/docs/LICENSE"
     New-Item -ItemType Directory -Path artifacts -Force | Out-Null
     if (Test-Path artifacts/win-x64) { Remove-Item artifacts/win-x64 -Recurse -Force }
     Move-Item $staging artifacts/win-x64
