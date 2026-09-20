@@ -18,9 +18,9 @@ Back up the entire data folder after exiting the application.
 The app is local-only. No account, network service, or API key is needed.
 XInput controllers are supported. Configure multiple processes in Games.
 
-This package was cross-compiled on macOS. Native Windows startup and
-real game/controller behavior still require Windows acceptance testing.
-Source and detailed documentation are provided alongside this package.
+Build origin and automated validation results are documented in the GitHub
+release notes. Real game/controller behavior still requires Windows acceptance
+testing. Source and detailed documentation accompany the release.
 
 UPDATE: Exit the old app from the tray before replacing program files.
 The existing %LOCALAPPDATA%\GameActivityTracker data folder is reused.
