@@ -145,6 +145,10 @@ scripts/                         # 发布、目录布局与 Windows 冒烟检查
 
 详细记录见 [VALIDATION.md](VALIDATION.md)，人工验收步骤见 [WINDOWS-ACCEPTANCE.md](WINDOWS-ACCEPTANCE.md)。
 
+## AI 辅助创建说明
+
+本项目使用 AI（包括 OpenAI Codex）辅助创建，AI 参与了代码编写、文档编写及项目整理。
+
 ## 许可证
 
-本项目尚未指定开源许可证。公开仓库不等于授予开源许可；如需按开源方式分发，请先由项目所有者选择并添加许可证。
+本项目采用 [MIT 许可证](LICENSE) 开源。
