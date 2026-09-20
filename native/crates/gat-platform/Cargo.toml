@@ -1,0 +1,29 @@
+[package]
+name = "gat-platform"
+description = "Windows platform integration for Game Activity Tracker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+gat-core = { path = "../gat-core" }
+chrono.workspace = true
+sysinfo.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.56"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Power",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Input_XboxController",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }

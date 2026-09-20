@@ -1,12 +1,8 @@
-using System.ComponentModel;
-using System.Diagnostics;
 using System.Windows;
 using System.Windows.Media.Imaging;
-using Microsoft.Win32;
 using GameActivityTracker.Data;
 using GameActivityTracker.Windows.Services;
 using GameActivityTracker.Windows.UI;
-using Forms=System.Windows.Forms;
 
 namespace GameActivityTracker.Windows;
 public partial class App : Application
@@ -14,22 +10,29 @@ public partial class App : Application
     private ThemeService? _theme;
     private Mutex? _instance;
     private bool _ownsMutex;
-    private Forms.NotifyIcon? _tray;
-    private System.Drawing.Icon? _trayIcon;
+    private EventWaitHandle? _activate;
+    private Thread? _activateThread;
     private TrackingService? _tracking;
     private TrackerDatabase? _database;
     private FileTrackerLog? _log;
-    private bool _exiting;
-    private bool _locked;
-    private bool _sleeping;
-    private bool _hiddenNotice;
-    private System.Windows.Threading.DispatcherTimer? _trayTimer;
+    private volatile bool _exiting;
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         var smoke=e.Args.Contains("--smoke-test");
-        _instance=new Mutex(true,smoke?@"Local\GameActivityTracker.SmokeTest":@"Local\GameActivityTracker",out _ownsMutex);
-        if(!_ownsMutex){MessageBox.Show("游戏时长记录器已在运行。请从系统托盘打开。");Shutdown();return;}
+        ShutdownMode=ShutdownMode.OnMainWindowClose;
+
+        // The native engine owns the only tray icon. The WPF window has no tray: closing
+        // it exits, and a second viewer instance only asks the first one to come forward.
+        var suffix=smoke?".SmokeTest":"";
+        _activate=new EventWaitHandle(false,EventResetMode.AutoReset,@"Local\GameActivityTracker"+suffix+".Activate");
+        _instance=new Mutex(true,@"Local\GameActivityTracker"+suffix,out _ownsMutex);
+        if(!_ownsMutex)
+        {
+            try { _activate.Set(); } catch { }
+            Shutdown();return;
+        }
+
         var startupStage="准备数据目录";
         string? logDirectory=null;
         try
@@ -50,15 +53,10 @@ public partial class App : Application
             startupStage="加载主界面";
             var window=new MainWindow(model);MainWindow=window;
             LoadWindowIcon(window);
-            window.Closing+=OnClosing;
-            window.StateChanged+=(_,_)=>{if(window.WindowState==WindowState.Minimized&&_database.GetSettings().RunInBackground)HideToTray();};
-            startupStage="初始化系统托盘";
-            CreateTray();
-            SystemEvents.PowerModeChanged+=OnPower;
-            SystemEvents.SessionSwitch+=OnSessionSwitch;
-            SessionEnding+=OnSessionEnding;
             DispatcherUnhandledException+=(_,args)=>{_log.Write("Unhandled UI error",args.Exception);};
             _tracking.Start();
+            _activateThread=new Thread(WaitForActivation){IsBackground=true,Name="GameActivityTracker.Activate"};
+            _activateThread.Start();
             startupStage="显示主界面";
             if(!e.Args.Contains("--background"))window.Show();
             _log.Write("Application initialized");
@@ -103,86 +101,37 @@ public partial class App : Application
             _log?.Write("Custom window icon unavailable; continuing with default icon",ex);
         }
     }
-    private void CreateTray()
+    private void WaitForActivation()
     {
-        try
+        while(!_exiting)
         {
-            using var iconStream=GetResourceStream(new Uri("pack://application:,,,/Assets/App.ico")).Stream;
-            using var sourceIcon=new System.Drawing.Icon(iconStream,Forms.SystemInformation.SmallIconSize);
-            _trayIcon=(System.Drawing.Icon)sourceIcon.Clone();
+            try { if(_activate is null || !_activate.WaitOne()) continue; }
+            catch(Exception) { break; }
+            if(_exiting) break;
+            Dispatcher.BeginInvoke(new Action(ActivateWindow));
         }
-        catch(Exception ex)
-        {
-            _log?.Write("Custom tray icon unavailable; using default icon",ex);
-            _trayIcon=(System.Drawing.Icon)System.Drawing.SystemIcons.Application.Clone();
-        }
-        _tray=new Forms.NotifyIcon{Icon=_trayIcon,Text="游戏时长记录器",Visible=true};
-        var menu=new Forms.ContextMenuStrip();
-        menu.Items.Add("打开",null,(_,_)=>ShowWindow());
-        var status=menu.Items.Add("记录状态：记录中");status.Enabled=false;
-        var game=menu.Items.Add("当前游戏：无");game.Enabled=false;
-        menu.Items.Add(new Forms.ToolStripSeparator());menu.Items.Add("退出",null,(_,_)=>ExitApplication());
-        _tray.ContextMenuStrip=menu;_tray.DoubleClick+=(_,_)=>ShowWindow();
-        _trayTimer=new(){Interval=TimeSpan.FromSeconds(2)};
-        _trayTimer.Tick+=(_,_)=>
-        {
-            status.Text=_tracking?.Error is {} error?"记录异常："+error:"记录状态："+(_locked||_sleeping?"暂停":"记录中");
-            var live=_tracking?.Snapshot();
-            if(live is null||live.Count==0){game.Text="当前游戏：无";return;}
-            try
-            {
-                var games=_database!.GetGames();
-                game.Text="当前游戏："+string.Join(", ",live.Select(g=>(games.FirstOrDefault(x=>x.Id==g.GameId)?.Name??g.GameId)+" "+UiText.State(g.State)));
-            }
-            catch(Exception ex){status.Text="数据库暂时不可读";_log?.Write("Tray metadata read failed",ex);}
-        };
-        _trayTimer.Start();
     }
-    private void HideToTray()
+    private void ActivateWindow()
     {
-        MainWindow.Hide();
-        if(_hiddenNotice)return;_hiddenNotice=true;
-        _tray?.ShowBalloonTip(2500,"游戏时长记录器","正在后台记录。双击托盘图标打开；右键选择“退出”可完全退出。",Forms.ToolTipIcon.Info);
+        if(MainWindow is null) return;
+        MainWindow.Show();
+        if(MainWindow.WindowState==WindowState.Minimized) MainWindow.WindowState=WindowState.Normal;
+        MainWindow.Activate();
+        MainWindow.Topmost=true;MainWindow.Topmost=false;
     }
-    private void ShowWindow(){MainWindow.Show();MainWindow.WindowState=WindowState.Normal;MainWindow.Activate();}
-    private void OnClosing(object? sender,CancelEventArgs e)
-    {
-        if(_exiting)return;
-        if(_database!.GetSettings().MinimizeToTray){e.Cancel=true;HideToTray();}
-        else { e.Cancel=true;Dispatcher.BeginInvoke(new Action(ExitApplication)); }
-    }
-    private void OnPower(object sender,PowerModeChangedEventArgs e)
-    {
-        if(e.Mode==PowerModes.Suspend){_sleeping=true;_tracking?.Suspend("SystemSuspend");}
-        else if(e.Mode==PowerModes.Resume){_sleeping=false;_tracking?.Resume();}
-    }
-    private void OnSessionSwitch(object sender,SessionSwitchEventArgs e)
-    {
-        if(e.Reason is SessionSwitchReason.SessionLock or SessionSwitchReason.RemoteDisconnect or SessionSwitchReason.ConsoleDisconnect)
-        {_locked=true;_tracking?.SetLocked(true);}
-        else if(e.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.RemoteConnect or SessionSwitchReason.ConsoleConnect)
-        {_locked=false;_tracking?.SetLocked(false);}
-    }
-    private void OnSessionEnding(object sender,SessionEndingCancelEventArgs e){_exiting=true;_tracking?.Suspend("WindowsSessionEnding");}
-    private void ApplyStartup(TrackerSettings settings)
-    {
-        using var key=Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-        if(settings.StartWithWindows)
-        {
-            var executable=Environment.ProcessPath??throw new InvalidOperationException("无法确定应用路径。");
-            if(Path.GetFileNameWithoutExtension(executable).Equals("dotnet",StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("请使用发布后的 GameActivityTracker.exe 设置开机启动。");
-            key.SetValue("GameActivityTracker",$"\"{executable}\" --background");
-        }
-        else key.DeleteValue("GameActivityTracker",false);
-    }
+    // Autostart belongs to the native engine: it writes the Run key to itself on start and
+    // on every settings reload, so the viewer must not touch the registry.
+    private void ApplyStartup(TrackerSettings _) { }
     private void ExitApplication(){_exiting=true;Shutdown();}
     protected override void OnExit(ExitEventArgs e)
     {
-        SystemEvents.PowerModeChanged-=OnPower;SystemEvents.SessionSwitch-=OnSessionSwitch;
+        _exiting=true;
+        try { _activate?.Set(); } catch { }
         _theme?.Dispose();
-        _trayTimer?.Stop();_tracking?.Dispose();
-        if(_tray is not null){_tray.Visible=false;_tray.ContextMenuStrip?.Dispose();_tray.Dispose();}
-        _trayIcon?.Dispose();
-        if(_ownsMutex)_instance?.ReleaseMutex();_instance?.Dispose();base.OnExit(e);
+        _tracking?.Dispose();
+        if(_ownsMutex)_instance?.ReleaseMutex();
+        _instance?.Dispose();
+        _activate?.Dispose();
+        base.OnExit(e);
     }
 }

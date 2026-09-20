@@ -1,0 +1,15 @@
+[package]
+name = "gat-core"
+description = "Platform-agnostic domain logic for Game Activity Tracker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+chrono.workspace = true
+chrono-tz.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

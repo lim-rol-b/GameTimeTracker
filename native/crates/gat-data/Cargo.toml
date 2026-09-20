@@ -1,0 +1,15 @@
+[package]
+name = "gat-data"
+description = "SQLite persistence for Game Activity Tracker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+gat-core = { path = "../gat-core" }
+chrono.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

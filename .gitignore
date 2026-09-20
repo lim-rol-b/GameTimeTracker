@@ -12,6 +12,11 @@
 *.pdb
 *.cache
 
+# Rust / Cargo build outputs
+native/target/
+**/*.rs.bk
+native/.cargo-home/
+
 # Test results and coverage
 [Tt]est[Rr]esults/
 coverage/

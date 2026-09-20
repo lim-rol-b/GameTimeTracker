@@ -11,8 +11,21 @@ public partial class MainWindow : Window
     {
         InitializeComponent();DataContext=_model=model;
         Loaded+=async (_,_)=>await _model.Refresh();
-        _timer.Tick+=async (_,_)=>{_model.UpdateLive();if(++_ticks%5==0 && IsVisible)await _model.Refresh();};
+        _timer.Tick+=async (_,_)=>await OnTick();
         _timer.Start();Closed+=(_,_)=>_timer.Stop();
+    }
+    private bool _tickBusy;
+    private async Task OnTick()
+    {
+        // Polls run off the UI thread, and a slow refresh must not let ticks stack up.
+        if(_tickBusy)return;
+        _tickBusy=true;
+        try
+        {
+            await _model.UpdateLiveAsync();
+            if(++_ticks%5==0 && IsVisible)await _model.Refresh();
+        }
+        finally{_tickBusy=false;}
     }
     private void OnToggleSettings(object sender,RoutedEventArgs e) => _model.SelectedTab=_model.SelectedTab==1?0:1;
     private void OnYearWheel(object sender,MouseWheelEventArgs e)

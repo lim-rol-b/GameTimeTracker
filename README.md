@@ -15,24 +15,52 @@
 - **游戏管理**：手动添加 exe，自动扫描 Steam 默认位置与登记库，预览确认后批量导入。
 - **进程识别**：支持名称、完整路径、命令行等组合规则；可后台发现游戏目录中的本体 exe，排除常见启动器和辅助工具。
 - **Minecraft / PCL**：根据客户端入口与游戏目录匹配 Java 进程，可按整个 `.minecraft` 或单个版本目录记录。
-- **外观与后台运行**：浅色、深色、跟随系统；系统托盘、登录启动和手柄输入检测。
+- **外观与后台运行**：浅色、深色、跟随系统；登录启动与手柄输入检测（后台托盘由 Rust 引擎提供）。
 
 ## 技术栈
 
 | 部分 | 技术 |
 | --- | --- |
-| 语言与运行时 | C# 12、.NET 8 |
+| 语言与运行时 | C# 12 / .NET 8（界面）、Rust 1.82+（引擎与后台模式） |
 | Windows 界面 | WPF、XAML、MVVM |
-| 数据持久化 | SQLite、Microsoft.Data.Sqlite |
-| 系统集成 | Win32、WMI、XInput、WinForms 托盘图标 |
-| 测试 | xUnit |
-| 持续集成 | GitHub Actions，Windows 构建、测试、发布及启动冒烟检查 |
+| 数据持久化 | SQLite（Microsoft.Data.Sqlite 与 rusqlite/bundled，schema 兼容） |
+| 系统集成 | windows-rs（进程、前台窗口、输入、XInput、注册表、托盘）；WPF 侧不再自带托盘 |
+| 测试 | cargo test（Rust 工作区 native/） |
+| 持续集成 | GitHub Actions：Windows 构建/发布/冒烟 + Rust 工作区测试与冒烟 |
+
+## Rust 后台轻量引擎（native/）
+
+仓库同时提供 `native/` Rust 工作区：它实现领域逻辑、SQLite 持久化与 Windows 平台采集，是**唯一
+的记录者**，并提供**无主窗口、低内存的托盘后台轻量模式**（`gat` 可执行文件，release 约 4 MB）。
+原有 WPF 界面保留为查看/编辑界面（其 C# 跟踪引擎已删除），通过共享 `activity.db` 与本地控制
+通道读取实时状态，不会再重复计时。托盘图标只由引擎持有：左键单击托盘即打开（或激活）WPF
+界面；WPF 关闭即退出，不再自带托盘。
+
+构建与测试：
+
+```powershell
+cargo test --manifest-path native/Cargo.toml --workspace
+cargo build --release --manifest-path native/Cargo.toml -p gat-app
+powershell -ExecutionPolicy Bypass -File scripts/build-native.ps1
+```
+
+运行后台轻量模式与查询：
+
+```powershell
+gat --background          # 托盘后台轻量模式（默认）
+gat --headless            # 无界面运行
+gat status                # 查询后台状态与当前游戏
+gat stats                 # 本年度统计
+```
+
+详见 [native/README.md](native/README.md)。Windows 实机验证项见该文档清单；交叉编译成功不代表实机验证完成。
 
 ## 运行要求
 
 - Windows 10 / 11，x64。
 - 从源码构建需要 .NET 8 SDK；可用安装了“.NET 桌面开发”工作负载的 Visual Studio 2022。
 - 自包含发布包不需要另行安装 .NET Runtime。
+- 发布包只保留简体中文（zh-Hans）的框架本地化资源，其余语言资源不进入 ZIP，避免无谓的体积占用。
 
 macOS / Linux 可以交叉编译 Windows 目标并运行核心测试，但不能在本机验证 WPF 界面与 Windows 输入 API。
 
@@ -45,7 +73,7 @@ macOS / Linux 可以交叉编译 Windows 目标并运行核心测试，但不能
 ```powershell
 dotnet restore
 dotnet build -c Release
-dotnet test tests/GameActivityTracker.Tests -c Release
+cargo test --manifest-path native/Cargo.toml --workspace
 ```
 
 Windows 上运行：
@@ -93,7 +121,7 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1
 3. 确认游戏本体 exe。默认启用目录内相关进程识别，复杂情况可通过 **编辑游戏 / 规则** 配置。
 4. Minecraft / PCL 可在编辑页选择 `.minecraft` 目录以统计多个版本，或选择某个版本目录单独统计。
 5. 启动游戏后，在主页面查看当前游戏、年度统计和热力图；点击日期查看小时记录及当天各游戏汇总。
-6. 关闭窗口默认收起到托盘；完全退出请使用托盘菜单的 **Exit / 退出**。
+6. 关闭窗口即退出 WPF 界面；后台记录由系统托盘中的引擎进程负责，左键单击托盘可再次打开界面，右键菜单 **退出** 可完全退出引擎。
 
 设置页提供游戏管理、外观、记录设置、手柄、系统、数据与隐私分类；右上角返回箭头可回到主页面。
 
@@ -119,7 +147,7 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1
 
 只检测是否发生输入，不保存按键文本、鼠标轨迹或手柄原始输入。进程路径和必要的命令行用于规则匹配。
 
-备份前请从托盘完全退出，再复制整个数据目录。程序文件与用户数据分开存放；升级时完整替换 exe 和 `runtime`，不要删除用户数据目录。
+备份前请使用托盘菜单的 **退出** 结束引擎，再复制整个数据目录。程序文件与用户数据分开存放；升级时完整替换 exe 和 `runtime`，不要删除用户数据目录。
 
 升级及旧版缓存清理说明见 [UPGRADE.md](UPGRADE.md)。
 
@@ -127,17 +155,17 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1
 
 ```text
 src/
-  GameActivityTracker.Core/       # 数据模型、匹配规则、记录与统计逻辑
-  GameActivityTracker.Data/       # SQLite 持久化
-  GameActivityTracker.Windows/    # WPF 界面、Windows 进程与输入检测
-tests/GameActivityTracker.Tests/  # 核心逻辑与数据库测试
-scripts/                         # 发布、目录布局与 Windows 冒烟检查
-.github/workflows/               # Windows CI
+  GameActivityTracker.Core/       # 数据模型、统计与 Steam 库读取（WPF 数据层）
+  GameActivityTracker.Data/       # SQLite 持久化（Microsoft.Data.Sqlite）
+  GameActivityTracker.Windows/    # WPF 查看/编辑界面与本地引擎客户端（不再采集）
+native/                          # Rust 引擎与后台轻量模式（gat-core/gat-data/gat-platform/gat-app）
+scripts/                         # 发布、原生构建与冒烟检查
+.github/workflows/               # Windows CI（.NET 与 Rust）
 ```
 
 ## 验证与限制
 
-[验证记录](VALIDATION.md)中最近一次功能测试为 **62 项通过**，包括进程匹配、Minecraft 目录识别、统计、持久化和设置兼容。该数字是历史记录；当前版本的测试结果请以本地运行或 GitHub Actions 为准。
+C# 跟踪引擎及其测试工程已删除，逻辑由 Rust 工作区接管：`cargo test --manifest-path native/Cargo.toml --workspace` 当前为 **56 项通过**，覆盖进程匹配、Minecraft 目录识别、统计（含 DST）、持久化与设置兼容。历史 C# 验证记录见 [VALIDATION.md](VALIDATION.md)。
 
 - Windows 实机的 Apex、PCL、反作弊权限、主题切换和鼠标交互仍需验证；交叉编译成功不代表实机运行验证完成。
 - 进程检测采用轮询，短暂进程可能遗漏；后台运行时间不等于实际游玩时间。

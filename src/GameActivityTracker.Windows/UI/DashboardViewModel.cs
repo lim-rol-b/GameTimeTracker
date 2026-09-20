@@ -26,6 +26,7 @@ public sealed class DashboardViewModel : ObservableObject
     private readonly string _dataDirectory;
     private List<Game> _games=[];
     private IReadOnlyList<GameSession> _history=[];
+    private SortedDictionary<DateOnly,DailyStatistics> _daily=[];
     private int _lastYearCheck;
     private int _year=DateTime.Now.Year;
     private int _tab;
@@ -35,8 +36,9 @@ public sealed class DashboardViewModel : ObservableObject
     private string _live="等待游戏启动";
     private string _periods="";
     private bool _refreshing;
+    private bool _rendering;
     private bool _importing;
-    public int Year { get=>_year; set { if(value>=1 && Years.Contains(value) && Set(ref _year,value)) Render(); } }
+    public int Year { get=>_year; set { if(value>=1 && Years.Contains(value) && Set(ref _year,value)) _=RenderAsync(); } }
     public ObservableCollection<int> Years { get; }=[];
     public ThemeOption[] Themes { get; }=[new("System","跟随系统"),new("Light","浅色"),new("Dark","深色")];
     public string ThemeMode
@@ -103,16 +105,25 @@ public sealed class DashboardViewModel : ObservableObject
         SaveSettings=new RelayCommand(_=>Save());
         OpenLogs=new RelayCommand(_=>Safe(()=>Process.Start(new ProcessStartInfo(Path.Combine(_dataDirectory,"logs")){UseShellExecute=true})));
     }
+    public async Task UpdateLiveAsync()
+    {
+        UpdateYears();
+        var snapshot=await _tracking.PollAsync();
+        ApplyLive(snapshot.Games,snapshot.Error);
+    }
     public void UpdateLive()
     {
         UpdateYears();
-        var live=_tracking.Snapshot();
+        ApplyLive(_tracking.Snapshot(),_tracking.Error);
+    }
+    private void ApplyLive(IReadOnlyList<LiveGame> live,string? error)
+    {
         CurrentGameTitle=live.Count==0 ? "等待游戏启动" : string.Join(" · ",live
             .OrderByDescending(g=>g.State==ActivityState.ACTIVE)
             .ThenBy(g=>g.GameId,StringComparer.Ordinal)
             .Select(g=>_games.FirstOrDefault(x=>x.Id==g.GameId)?.Name??"正在记录的游戏"));
         LiveStatus=live.Count==0 ? "等待游戏启动 · 添加游戏后将自动识别" : string.Join("\n",live.Select(g=>$"●  {_games.FirstOrDefault(x=>x.Id==g.GameId)?.Name??g.GameId}   {UiText.State(g.State)}    活跃 {DurationFormat.Clock(g.ActiveSeconds)}    运行 {DurationFormat.Clock(g.RunningSeconds)}"+(g.State==ActivityState.IDLE?$"    已空闲 {DurationFormat.Clock(g.InputIdleSeconds)}":"")));
-        if(!_importing) Status=_tracking.Error is {} error ? "记录异常，将自动重试："+error : $"本地记录中  ·  {_games.Count} 个游戏  ·  每 {Settings.ProcessScanIntervalSeconds} 秒扫描  ·  {TimeZoneInfo.Local.DisplayName}";
+        if(!_importing) Status=error is {} message ? "记录异常，将自动重试："+message : $"本地记录中  ·  {_games.Count} 个游戏  ·  每 {Settings.ProcessScanIntervalSeconds} 秒扫描  ·  {TimeZoneInfo.Local.DisplayName}";
     }
     public async Task Refresh()
     {
@@ -120,32 +131,58 @@ public sealed class DashboardViewModel : ObservableObject
         try
         {
             var result=await Task.Run(()=>(_db.GetGames(),_db.GetSessions()));
-            _games=result.Item1.ToList();_history=result.Item2; UpdateYears(true);Render();UpdateLive();
+            _games=result.Item1.ToList();_history=result.Item2; UpdateYears(true);
+            await RenderAsync();await UpdateLiveAsync();
         }
         catch(Exception ex) { Status="读取失败："+ex.Message; }
         finally { _refreshing=false; }
     }
-    private void Render()
+    private async Task RenderAsync()
     {
-        var zone=TimeZoneInfo.Local; var today=DateOnly.FromDateTime(DateTime.Now);
-        var daily=_statistics.Daily(_history,zone);var year=_statistics.Year(_history,zone,Year,today);
-        Metrics.Clear();
-        foreach(var metric in new[]{new Metric("累计活跃时长",DurationFormat.Short(year.ActiveSeconds)),new Metric("活跃天数",year.ActiveDays.ToString()),new Metric("游玩次数",year.SessionCount.ToString()),new Metric("最长单次游玩",DurationFormat.Short(year.LongestSession)),new Metric("当前连续天数",year.CurrentStreak+" 天"),new Metric("最长连续天数",year.LongestStreak+" 天")}) Metrics.Add(metric);
-        Heatmap.Update(Year,daily,_games);
-        var weekStart=today.AddDays(-((int)today.DayOfWeek+6)%7);
-        Periods=$"今天  {DurationFormat.Short(daily.GetValueOrDefault(today)?.ActiveSeconds??0)}     本周  {DurationFormat.Short(daily.Values.Where(d=>d.Date>=weekStart && d.Date<=today).Sum(d=>d.ActiveSeconds))}     本月  {DurationFormat.Short(daily.Values.Where(d=>d.Date.Year==today.Year && d.Date.Month==today.Month).Sum(d=>d.ActiveSeconds))}     {Year} 年运行时长  {DurationFormat.Short(year.RunningSeconds)}";
-        var selected=SelectedGame?.Game.Id; Games.Clear();
-        foreach(var game in _games)
+        if(_rendering) return;_rendering=true;
+        try
         {
-            var stats=_statistics.Game(_history.Where(s=>s.GameId==game.Id),zone);
-            Games.Add(new(game,DurationFormat.Short(stats.ActiveSeconds),DurationFormat.Short(stats.RunningSeconds),stats.Sessions));
+            while(true)
+            {
+                var year=_year;var games=_games;var history=_history;
+                var view=await Task.Run(()=>Compute(games,history,TimeZoneInfo.Local,DateOnly.FromDateTime(DateTime.Now),year));
+                if(year!=_year) continue; // A newer year selection arrived while computing; recompute for it.
+                Apply(view);break;
+            }
         }
+        catch(Exception ex) { Status="读取失败："+ex.Message; }
+        finally { _rendering=false; }
+    }
+    private DashboardView Compute(IReadOnlyList<Game> games,IReadOnlyList<GameSession> history,TimeZoneInfo zone,DateOnly today,int year)
+    {
+        var daily=_statistics.Daily(history,zone);
+        var yearly=_statistics.Year(history,zone,year,today);
+        var metrics=new[]{new Metric("累计活跃时长",DurationFormat.Short(yearly.ActiveSeconds)),new Metric("活跃天数",yearly.ActiveDays.ToString()),new Metric("游玩次数",yearly.SessionCount.ToString()),new Metric("最长单次游玩",DurationFormat.Short(yearly.LongestSession)),new Metric("当前连续天数",yearly.CurrentStreak+" 天"),new Metric("最长连续天数",yearly.LongestStreak+" 天")};
+        var weekStart=today.AddDays(-((int)today.DayOfWeek+6)%7);
+        var periods=$"今天  {DurationFormat.Short(daily.GetValueOrDefault(today)?.ActiveSeconds??0)}     本周  {DurationFormat.Short(daily.Values.Where(d=>d.Date>=weekStart && d.Date<=today).Sum(d=>d.ActiveSeconds))}     本月  {DurationFormat.Short(daily.Values.Where(d=>d.Date.Year==today.Year && d.Date.Month==today.Month).Sum(d=>d.ActiveSeconds))}     {year} 年运行时长  {DurationFormat.Short(yearly.RunningSeconds)}";
+        var rows=new List<GameRow>(games.Count);
+        foreach(var game in games)
+        {
+            var stats=_statistics.Game(history.Where(s=>s.GameId==game.Id),zone);
+            rows.Add(new(game,DurationFormat.Short(stats.ActiveSeconds),DurationFormat.Short(stats.RunningSeconds),stats.Sessions));
+        }
+        return new(daily,metrics,periods,rows);
+    }
+    private void Apply(DashboardView view)
+    {
+        Metrics.Clear();foreach(var metric in view.Metrics) Metrics.Add(metric);
+        _daily=view.Daily;
+        Heatmap.Update(_year,view.Daily,_games);
+        Periods=view.Periods;
+        var selected=SelectedGame?.Game.Id;Games.Clear();
+        foreach(var game in view.Rows) Games.Add(game);
         SelectedGame=Games.FirstOrDefault(g=>g.Game.Id==selected);
     }
+    private sealed record DashboardView(SortedDictionary<DateOnly,DailyStatistics> Daily,Metric[] Metrics,string Periods,List<GameRow> Rows);
     public static SessionRow Row(GameSession s,IReadOnlyList<Game> games)=>new(games.FirstOrDefault(g=>g.Id==s.GameId)?.Name??"未知游戏",s.StartTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),s.EndTime?.ToLocalTime().ToString("MM-dd HH:mm:ss")??"记录中",DurationFormat.Short(s.ActiveDuration),DurationFormat.Short(s.RunningDuration),DurationFormat.Short(s.IdleDuration),DurationFormat.Short(s.BackgroundDuration),$"{UiText.Source(s.Source)} / {UiText.EndReason(s.EndReason)}");
     private void OpenDay(DateOnly day)
     {
-        var daily=_statistics.Daily(_history,TimeZoneInfo.Local).GetValueOrDefault(day);
+        var daily=_daily.GetValueOrDefault(day);
         var sessions=_history.Where(s=>s.Segments.Any(seg=>_statistics.Split(seg.StartTime,seg.EndTime,TimeZoneInfo.Local).Any(d=>d.Day==day))).ToList();
         new DetailWindow(new DetailViewModel(day,daily,sessions,_games)){Owner=Application.Current.MainWindow}.Show();
     }

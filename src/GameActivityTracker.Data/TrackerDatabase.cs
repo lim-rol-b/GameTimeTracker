@@ -9,9 +9,11 @@ namespace GameActivityTracker.Data;
 public sealed class TrackerDatabase : IGameRepository, ISessionRepository, ISettingsRepository
 {
     private readonly string _connectionString;
+    public string DatabasePath { get; }
     public TrackerDatabase(string path)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        DatabasePath = Path.GetFullPath(path);
+        Directory.CreateDirectory(Path.GetDirectoryName(DatabasePath)!);
         _connectionString = new SqliteConnectionStringBuilder { DataSource = path, ForeignKeys = true, DefaultTimeout = 10 }.ToString();
         using var connection = Open();
         using var command = connection.CreateCommand();
