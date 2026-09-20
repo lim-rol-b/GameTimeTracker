@@ -10,57 +10,61 @@ public sealed class ProcessProvider(Func<IReadOnlyList<GameProcessRule>> rules, 
     private readonly SteamProvider _steam = new(log);
     private Dictionary<string, HashSet<int>> _running = [];
     private readonly Dictionary<int,(DateTimeOffset Start,string Game)> _known = [];
-    private string _ruleFingerprint="";
+    private IReadOnlyList<GameProcessRule> _configuredRules=[];
+    private IReadOnlyList<Game> _configuredGames=[];
+    private long _ruleVersion;
+    private ILookup<string,GameProcessRule> _rulesByName=Array.Empty<GameProcessRule>().ToLookup(r=>r.ExecutableName,StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<GameProcessRule> _effectiveRules=[];
     private DateTimeOffset _lastExpansion=DateTimeOffset.MinValue;
     private readonly HashSet<int> _unreadable=[];
     private Task<IReadOnlyList<GameProcessRule>>? _expansionTask;
-    private string _expansionFingerprint="";
+    private long _expansionVersion;
     public event EventHandler<GameStartedEventArgs>? GameStarted;
     public event EventHandler<GameStoppedEventArgs>? GameStopped;
     public IReadOnlyDictionary<string, HashSet<int>> RunningGames => _running;
     public void Scan(DateTimeOffset now)
     {
-        var currentRules=rules().Where(r=>r.Enabled).ToList();
-        var currentGames=games().Select(g=>g with{}).ToList();
-        var fingerprint=System.Text.Json.JsonSerializer.Serialize(new { Rules=currentRules, Games=currentGames });
-        if(fingerprint!=_ruleFingerprint)
+        var suppliedRules=rules();var suppliedGames=games();
+        if(!suppliedRules.SequenceEqual(_configuredRules) || !suppliedGames.SequenceEqual(_configuredGames))
         {
-            _known.Clear();_unreadable.Clear();_ruleFingerprint=fingerprint;_lastExpansion=DateTimeOffset.MinValue;
-            _effectiveRules=currentRules.Where(r=>!RelatedProcessRules.IsSimple(r) || !RelatedProcessRules.IsLauncher(r.ExecutableName)
-                || currentGames.FirstOrDefault(g=>g.Id==r.GameId)?.DetectRelatedExecutables!=true).ToList();
+            _configuredRules=suppliedRules.Select(r=>r with{}).ToArray();
+            _configuredGames=suppliedGames.Select(g=>g with{}).ToArray();
+            _ruleVersion++;
+            _known.Clear();_unreadable.Clear();_lastExpansion=DateTimeOffset.MinValue;
+            SetEffectiveRules(_configuredRules.Where(r=>r.Enabled && (!RelatedProcessRules.IsSimple(r) || !RelatedProcessRules.IsLauncher(r.ExecutableName)
+                || _configuredGames.FirstOrDefault(g=>g.Id==r.GameId)?.DetectRelatedExecutables!=true)).ToArray());
         }
         if(_expansionTask is { IsCompleted:true })
         {
             try
             {
                 var expanded=_expansionTask.GetAwaiter().GetResult();
-                if(_expansionFingerprint==fingerprint) _effectiveRules=expanded;
+                if(_expansionVersion==_ruleVersion) SetEffectiveRules(expanded);
             }
             catch(Exception ex) { log.Write("Related executable discovery failed; retaining explicit rules",ex); }
             _expansionTask=null;
         }
         if(_expansionTask is null && now-_lastExpansion>TimeSpan.FromMinutes(2))
         {
-            _lastExpansion=now;_expansionFingerprint=fingerprint;
-            var copied=currentRules.Select(r=>r with{}).ToList();
+            _lastExpansion=now;_expansionVersion=_ruleVersion;
+            var copied=_configuredRules.Where(r=>r.Enabled).ToArray();
+            var currentGames=_configuredGames;
             _expansionTask=Task.Run(()=>ExpandRules(copied,currentGames));
         }
-        currentRules=_effectiveRules.ToList();
-        var names=currentRules.Select(r=>Path.GetFileNameWithoutExtension(r.ExecutableName)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         var next = new Dictionary<string,HashSet<int>>();
         var seen = new HashSet<int>();
-        foreach (var process in Process.GetProcesses())
-        using (process)
+        foreach (var process in _effectiveRules.Count==0 ? Array.Empty<ProcessCatalog.Entry>() : ProcessCatalog.Candidates(_rulesByName.Contains))
         {
             try
             {
-                if (!names.Contains(process.ProcessName)) continue;
+                var processName=process.Name;
+                if (!_rulesByName.Contains(processName)) continue;
                 int pid=process.Id; seen.Add(pid);
                 var image=ProcessImageReader.Read(pid);
                 DateTimeOffset? start=image.Started; string? path=image.Path; string? command=null;
-                if(start is null) try { start=new DateTimeOffset(process.StartTime.ToUniversalTime()); } catch (System.ComponentModel.Win32Exception) { }
-                var candidates=currentRules.Where(r=>string.Equals(Path.GetFileNameWithoutExtension(r.ExecutableName),process.ProcessName,StringComparison.OrdinalIgnoreCase)).ToList();
+                if(start is null) try { using var fallback=Process.GetProcessById(pid);start=new DateTimeOffset(fallback.StartTime.ToUniversalTime()); } catch (System.ComponentModel.Win32Exception) { }
+                var candidates=_rulesByName[processName].ToArray();
                 if (candidates.Any(r=>!string.IsNullOrWhiteSpace(r.MinecraftRootDirectory) || !string.IsNullOrWhiteSpace(r.CommandLineContains) || !string.IsNullOrWhiteSpace(r.SteamAppId)) || path is null)
                 {
                     try
@@ -72,19 +76,20 @@ public sealed class ProcessProvider(Func<IReadOnlyList<GameProcessRule>> rules, 
                     catch (ManagementException) { }
                     catch (UnauthorizedAccessException) { }
                 }
-                var snapshot=new ProcessSnapshot(pid,process.ProcessName+".exe",path,command,start,_steam.AppIdForPath(path));
+                var snapshot=new ProcessSnapshot(pid,processName+".exe",path,command,start,_steam.AppIdForPath(path));
                 var game=_matcher.Match(snapshot,candidates);
                 // A previously verified process may temporarily become inaccessible. Never reuse a recycled PID.
                 if (game is null && path is null && start is {} began && _known.TryGetValue(pid,out var known) && known.Start==began && candidates.Any(r=>r.GameId==known.Game)) game=known.Game;
                 if (game is null)
                 {
-                    if(path is null && _unreadable.Add(pid)) log.Write($"Unable to verify process path: {process.ProcessName} ({pid}); bind the real game process or check process permissions.");
+                    if(path is null && _unreadable.Add(pid)) log.Write($"Unable to verify process path: {processName} ({pid}); bind the real game process or check process permissions.");
                     continue;
                 }
                 if (start is {} time) _known[pid]=(time,game);
                 if (!next.TryGetValue(game,out var ids)) next[game]=ids=[];
                 ids.Add(pid);
             }
+            catch (ArgumentException) { } // PID exited before the fallback handle was opened.
             catch (InvalidOperationException) { } // Exited between enumeration and metadata read.
             catch (System.ComponentModel.Win32Exception) { }
         }
@@ -93,6 +98,11 @@ public sealed class ProcessProvider(Func<IReadOnlyList<GameProcessRule>> rules, 
         var previous=_running; _running=next;
         foreach(var game in previous.Keys.Except(next.Keys)) { log.Write($"Game stopped: {game}"); GameStopped?.Invoke(this,new(game,now)); }
         foreach(var game in next.Keys.Except(previous.Keys)) { log.Write($"Game detected: {game}"); GameStarted?.Invoke(this,new(game,next[game],now)); }
+    }
+    private void SetEffectiveRules(IReadOnlyList<GameProcessRule> rules)
+    {
+        _effectiveRules=rules;
+        _rulesByName=rules.ToLookup(r=>Path.GetFileNameWithoutExtension(r.ExecutableName),StringComparer.OrdinalIgnoreCase);
     }
     private IReadOnlyList<GameProcessRule> ExpandRules(IReadOnlyList<GameProcessRule> configured,IReadOnlyList<Game> currentGames)
     {

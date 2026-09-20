@@ -38,7 +38,11 @@ macOS / Linux 可以交叉编译 Windows 目标并运行核心测试，但不能
 
 ## 从源码构建
 
-如需直接使用，可前往 [v1.0.1 发布页面](https://github.com/lim-rol-b/GameTimeTracker/releases/tag/v1.0.1) 下载 `GameTimeTracker-1.0.1-win-x64.zip`。完整解压后运行 `GameActivityTracker.exe`，并保留同目录的 `runtime` 文件夹。
+如需直接使用，可前往 [v1.0.2 发布页面](https://github.com/lim-rol-b/GameTimeTracker/releases/tag/v1.0.2) 下载 `GameTimeTracker-1.0.2-win-x64.zip`。完整解压后运行 `GameActivityTracker.exe`，并保留同目录的 `runtime` 文件夹。
+
+**轻量版下载**：同一发布页中的 `GameTimeTracker-1.0.2-win-x64-lite.zip`。要求 Windows 10/11 x64，并预先安装 [.NET 8 Desktop Runtime（Windows x64）](https://dotnet.microsoft.com/download/dotnet/8.0)。下载页面请选择 **.NET Desktop Runtime → Windows → x64**；仅安装普通 .NET Runtime、ASP.NET Core Runtime 或 x86 版本不满足要求。不想安装运行库请选择上面的免安装版。两个版本的界面、功能和用户数据目录相同。
+
+v1.0.2 优化后台窗口加载、历史缓存、进程扫描和数据库检查点。用户反馈优化后后台内存约 **96 MB**；这是单次实测反馈，具体占用随机器、游戏和历史量变化。
 
 在仓库根目录执行：
 
@@ -77,6 +81,8 @@ runtime/
 ```
 
 请保留 exe 旁边的 `runtime` 文件夹。程序直接从该文件夹加载依赖，不采用单文件临时解压方案。
+
+轻量包可通过 `./scripts/publish-win.ps1 -FrameworkDependent` 生成，需另装 .NET 8 Desktop Runtime（Windows x64）。免安装版可在解压后使用 `runtime/docs/compact-runtime.ps1` 做 NTFS 无损磁盘压缩。两种包的区别、后台优化和内存测量方法见 [体积与性能说明](PERFORMANCE.md)。
 
 Windows 启动冒烟检查：
 
@@ -137,7 +143,7 @@ scripts/                         # 发布、目录布局与 Windows 冒烟检查
 
 ## 验证与限制
 
-[验证记录](VALIDATION.md)中最近一次功能测试为 **62 项通过**，包括进程匹配、Minecraft 目录识别、统计、持久化和设置兼容。该数字是历史记录；当前版本的测试结果请以本地运行或 GitHub Actions 为准。
+[验证记录](VALIDATION.md)中最近一次本地功能测试为 **65 项通过**，包括进程匹配、Minecraft 目录识别、统计、持久化和设置兼容。该数字是历史记录；当前版本的测试结果请以本地运行或 GitHub Actions 为准。
 
 - Windows 实机的 Apex、PCL、反作弊权限、主题切换和鼠标交互仍需验证；交叉编译成功不代表实机运行验证完成。
 - 进程检测采用轮询，短暂进程可能遗漏；后台运行时间不等于实际游玩时间。

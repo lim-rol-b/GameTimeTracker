@@ -20,6 +20,7 @@ public partial class App : Application
     private TrackerDatabase? _database;
     private FileTrackerLog? _log;
     private bool _exiting;
+    private string _dataDirectory="";
     private bool _locked;
     private bool _sleeping;
     private bool _hiddenNotice;
@@ -35,6 +36,7 @@ public partial class App : Application
         try
         {
             var directory=smoke?Path.Combine(Path.GetTempPath(),"GameActivityTracker.SmokeTest"):Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"GameActivityTracker");
+            _dataDirectory=directory;
             logDirectory=Path.Combine(directory,"logs");
             Directory.CreateDirectory(logDirectory);_log=new(logDirectory);
             startupStage="初始化数据库";
@@ -46,12 +48,6 @@ public partial class App : Application
             _theme.Apply(settings.ThemeMode);
             startupStage="初始化记录服务";
             _tracking=new(_database,_log);
-            var model=new DashboardViewModel(_database,_tracking,ApplyStartup,directory,_theme);
-            startupStage="加载主界面";
-            var window=new MainWindow(model);MainWindow=window;
-            LoadWindowIcon(window);
-            window.Closing+=OnClosing;
-            window.StateChanged+=(_,_)=>{if(window.WindowState==WindowState.Minimized&&_database.GetSettings().RunInBackground)HideToTray();};
             startupStage="初始化系统托盘";
             CreateTray();
             SystemEvents.PowerModeChanged+=OnPower;
@@ -60,16 +56,48 @@ public partial class App : Application
             DispatcherUnhandledException+=(_,args)=>{_log.Write("Unhandled UI error",args.Exception);};
             _tracking.Start();
             startupStage="显示主界面";
-            if(!e.Args.Contains("--background"))window.Show();
+            if(!e.Args.Contains("--background"))ShowWindow();
             _log.Write("Application initialized");
             if(smoke)
             {
-                var smokeTimer=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromSeconds(4)};
+                var phase=0;
+                Window? original=null;
+                var smokeTimer=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromSeconds(2)};
                 smokeTimer.Tick+=(_,_)=>
                 {
-                    smokeTimer.Stop();
-                    if(_tracking.Error is {} error){_log.Write("Smoke test failed: "+error);_exiting=true;Shutdown(2);}
-                    else { _log.Write("Smoke test passed: window initialized, dispatcher and tracking loop alive");ExitApplication(); }
+                    try
+                    {
+                        if(_tracking.Error is {} error) throw new InvalidOperationException(error);
+                        switch(phase++)
+                        {
+                            case 0:
+                                if(e.Args.Contains("--background") && MainWindow is not null)
+                                    throw new InvalidOperationException("Background startup eagerly created the window.");
+                                ShowWindow();original=MainWindow;
+                                break;
+                            case 1:
+                                if(MainWindow.DataContext is not DashboardViewModel model || model.Metrics.Count!=6)
+                                    throw new InvalidOperationException("Dashboard did not refresh after opening.");
+                                model.SelectedTab=1;
+                                MainWindow.Hide();
+                                break;
+                            case 2:
+                                ShowWindow();
+                                if(!ReferenceEquals(original,MainWindow) || ((DashboardViewModel)MainWindow.DataContext).SelectedTab!=1)
+                                    throw new InvalidOperationException("Tray restore lost window state.");
+                                break;
+                            default:
+                                GamePresence.ProcessProviderSmokeTests.Run(_log);
+                                smokeTimer.Stop();
+                                _log.Write("Smoke test passed: lazy startup, tray restore, process rule invalidation, tracking loop");
+                                ExitApplication();
+                                break;
+                        }
+                    }
+                    catch(Exception ex)
+                    {
+                        smokeTimer.Stop();_log.Write("Smoke test failed",ex);_exiting=true;Shutdown(2);
+                    }
                 };
                 smokeTimer.Start();
             }
@@ -131,8 +159,8 @@ public partial class App : Application
             if(live is null||live.Count==0){game.Text="当前游戏：无";return;}
             try
             {
-                var games=_database!.GetGames();
-                game.Text="当前游戏："+string.Join(", ",live.Select(g=>(games.FirstOrDefault(x=>x.Id==g.GameId)?.Name??g.GameId)+" "+UiText.State(g.State)));
+                var games=_tracking!.GameNames();
+                game.Text="当前游戏："+string.Join(", ",live.Select(g=>(games.GetValueOrDefault(g.GameId)??g.GameId)+" "+UiText.State(g.State)));
             }
             catch(Exception ex){status.Text="数据库暂时不可读";_log?.Write("Tray metadata read failed",ex);}
         };
@@ -144,7 +172,18 @@ public partial class App : Application
         if(_hiddenNotice)return;_hiddenNotice=true;
         _tray?.ShowBalloonTip(2500,"游戏时长记录器","正在后台记录。双击托盘图标打开；右键选择“退出”可完全退出。",Forms.ToolTipIcon.Info);
     }
-    private void ShowWindow(){MainWindow.Show();MainWindow.WindowState=WindowState.Normal;MainWindow.Activate();}
+    private void ShowWindow()
+    {
+        if(MainWindow is null)
+        {
+            var model=new DashboardViewModel(_database!,_tracking!,ApplyStartup,_dataDirectory,_theme!);
+            var window=new MainWindow(model);MainWindow=window;
+            LoadWindowIcon(window);
+            window.Closing+=OnClosing;
+            window.StateChanged+=(_,_)=>{if(window.WindowState==WindowState.Minimized&&_database!.GetSettings().RunInBackground)HideToTray();};
+        }
+        MainWindow.Show();MainWindow.WindowState=WindowState.Normal;MainWindow.Activate();
+    }
     private void OnClosing(object? sender,CancelEventArgs e)
     {
         if(_exiting)return;

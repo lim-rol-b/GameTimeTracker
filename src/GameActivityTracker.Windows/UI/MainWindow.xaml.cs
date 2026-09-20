@@ -10,9 +10,14 @@ public partial class MainWindow : Window
     public MainWindow(DashboardViewModel model)
     {
         InitializeComponent();DataContext=_model=model;
-        Loaded+=async (_,_)=>await _model.Refresh();
+        IsVisibleChanged+=async (_,_)=>
+        {
+            _model.SetPresentationActive(IsVisible);
+            if(IsVisible) { _ticks=0;_timer.Start();await _model.Refresh(); }
+            else _timer.Stop();
+        };
         _timer.Tick+=async (_,_)=>{_model.UpdateLive();if(++_ticks%5==0 && IsVisible)await _model.Refresh();};
-        _timer.Start();Closed+=(_,_)=>_timer.Stop();
+        Closed+=(_,_)=>{_timer.Stop();_model.SetPresentationActive(false);};
     }
     private void OnToggleSettings(object sender,RoutedEventArgs e) => _model.SelectedTab=_model.SelectedTab==1?0:1;
     private void OnYearWheel(object sender,MouseWheelEventArgs e)

@@ -11,13 +11,16 @@ public sealed class SessionManager
     }
     private readonly Dictionary<string, Tracked> _running = [];
     private readonly ActivityDetector _detector = new();
-    public IReadOnlyList<GameSession> Sessions => _running.Values.Select(t => t.Session).ToList();
+    private IReadOnlyList<GameSession>? _snapshot;
+    // Membership only changes on start/stop; session objects continue to update in place.
+    public IReadOnlyList<GameSession> Sessions => _snapshot ??= _running.Values.Select(t => t.Session).ToArray();
     public TimeSpan IdleThreshold { get; set; } = TimeSpan.FromSeconds(60);
     public GameSession Start(string gameId, DateTimeOffset now, ActivityObservation observation, string source = "Observed")
     {
         if (_running.TryGetValue(gameId, out var existing)) return existing.Session;
         var session = new GameSession { GameId = gameId, StartTime = now, LastCheckpoint = now, Source = source };
         _running.Add(gameId, new Tracked(session, observation, now));
+        _snapshot=null;
         return session;
     }
     public ActivityState State(string gameId) => _running.TryGetValue(gameId, out var t)
@@ -61,6 +64,7 @@ public sealed class SessionManager
         t.Session.EndTime = t.Time;
         t.Session.EndReason = reason;
         _running.Remove(gameId);
+        _snapshot=null;
         return t.Session;
     }
     public IReadOnlyList<GameSession> StopAll(DateTimeOffset now, string reason) =>

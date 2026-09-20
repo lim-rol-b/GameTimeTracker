@@ -3,16 +3,26 @@ on: [push, pull_request, workflow_dispatch]
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        package: [portable, lite]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-      - run: ./scripts/publish-win.ps1
+      - run: |
+          if ('${{ matrix.package }}' -eq 'lite') { ./scripts/publish-win.ps1 -FrameworkDependent }
+          else { ./scripts/publish-win.ps1 }
         shell: pwsh
-      - run: ./scripts/smoke-test.ps1
+      - run: |
+          $folder = if ('${{ matrix.package }}' -eq 'lite') { 'win-x64-lite' } else { 'win-x64' }
+          ./scripts/smoke-test.ps1 -Executable "artifacts/$folder/GameActivityTracker.exe"
+          & "./artifacts/$folder/runtime/docs/compact-runtime.ps1"
+          ./scripts/smoke-test.ps1 -Executable "artifacts/$folder/GameActivityTracker.exe"
         shell: pwsh
       - uses: actions/upload-artifact@v4
         with:
-          name: GameActivityTracker-win-x64
-          path: artifacts/win-x64
+          name: GameActivityTracker-${{ matrix.package }}
+          path: artifacts/GameActivityTracker-*.zip
+          if-no-files-found: error

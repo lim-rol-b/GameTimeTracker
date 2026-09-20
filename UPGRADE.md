@@ -23,3 +23,9 @@
 ## 旧版解压缓存
 
 本版不会生成单文件运行库解压缓存。旧版留下的 `%TEMP%\.net\GameActivityTracker` 不会自动删除；退出所有旧版程序后可手动删除该缓存目录。不要删除 `%LOCALAPPDATA%\GameActivityTracker`，那里存放历史记录。
+
+## v1.0.2 轻量版要求
+
+轻量版需要 Windows 10/11 x64，并安装 .NET 8 Desktop Runtime（Windows x64）。官方下载：https://dotnet.microsoft.com/download/dotnet/8.0 ，选择“.NET Desktop Runtime → Windows → x64”。普通 .NET Runtime、ASP.NET Core Runtime 和 x86 运行库不能替代。免安装版不需要额外安装运行库。
+
+完整解压后保留 exe 旁边的 runtime 文件夹；不要只复制 exe。两种版本使用同一个用户数据目录，切换版本无需迁移记录。

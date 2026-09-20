@@ -35,6 +35,7 @@ public sealed class DashboardViewModel : ObservableObject
     private string _live="等待游戏启动";
     private string _periods="";
     private bool _refreshing;
+    private bool _presentationActive;
     private bool _importing;
     public int Year { get=>_year; set { if(value>=1 && Years.Contains(value) && Set(ref _year,value)) Render(); } }
     public ObservableCollection<int> Years { get; }=[];
@@ -114,12 +115,19 @@ public sealed class DashboardViewModel : ObservableObject
         LiveStatus=live.Count==0 ? "等待游戏启动 · 添加游戏后将自动识别" : string.Join("\n",live.Select(g=>$"●  {_games.FirstOrDefault(x=>x.Id==g.GameId)?.Name??g.GameId}   {UiText.State(g.State)}    活跃 {DurationFormat.Clock(g.ActiveSeconds)}    运行 {DurationFormat.Clock(g.RunningSeconds)}"+(g.State==ActivityState.IDLE?$"    已空闲 {DurationFormat.Clock(g.InputIdleSeconds)}":"")));
         if(!_importing) Status=_tracking.Error is {} error ? "记录异常，将自动重试："+error : $"本地记录中  ·  {_games.Count} 个游戏  ·  每 {Settings.ProcessScanIntervalSeconds} 秒扫描  ·  {TimeZoneInfo.Local.DisplayName}";
     }
+    public void SetPresentationActive(bool active)
+    {
+        _presentationActive=active;
+        // Keep selections, settings edits and rendered UI intact. Reload history on return.
+        if(!active) _history=[];
+    }
     public async Task Refresh()
     {
-        if(_refreshing) return;_refreshing=true;
+        if(_refreshing || !_presentationActive) return;_refreshing=true;
         try
         {
             var result=await Task.Run(()=>(_db.GetGames(),_db.GetSessions()));
+            if(!_presentationActive) return;
             _games=result.Item1.ToList();_history=result.Item2; UpdateYears(true);Render();UpdateLive();
         }
         catch(Exception ex) { Status="读取失败："+ex.Message; }
@@ -145,12 +153,14 @@ public sealed class DashboardViewModel : ObservableObject
     public static SessionRow Row(GameSession s,IReadOnlyList<Game> games)=>new(games.FirstOrDefault(g=>g.Id==s.GameId)?.Name??"未知游戏",s.StartTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),s.EndTime?.ToLocalTime().ToString("MM-dd HH:mm:ss")??"记录中",DurationFormat.Short(s.ActiveDuration),DurationFormat.Short(s.RunningDuration),DurationFormat.Short(s.IdleDuration),DurationFormat.Short(s.BackgroundDuration),$"{UiText.Source(s.Source)} / {UiText.EndReason(s.EndReason)}");
     private void OpenDay(DateOnly day)
     {
+        if(_history.Count==0) { try { _history=_db.GetSessions(); } catch(Exception ex) { Status="读取失败："+ex.Message;return; } }
         var daily=_statistics.Daily(_history,TimeZoneInfo.Local).GetValueOrDefault(day);
         var sessions=_history.Where(s=>s.Segments.Any(seg=>_statistics.Split(seg.StartTime,seg.EndTime,TimeZoneInfo.Local).Any(d=>d.Day==day))).ToList();
         new DetailWindow(new DetailViewModel(day,daily,sessions,_games)){Owner=Application.Current.MainWindow}.Show();
     }
     private void ShowGame()
     {
+        if(_history.Count==0) { try { _history=_db.GetSessions(); } catch(Exception ex) { Status="读取失败："+ex.Message;return; } }
         if(SelectedGame is null)return;
         new DetailWindow(new DetailViewModel(SelectedGame.Game,_history.Where(s=>s.GameId==SelectedGame.Game.Id).ToList(),_games,Year,OpenDay)){Owner=Application.Current.MainWindow}.Show();
     }

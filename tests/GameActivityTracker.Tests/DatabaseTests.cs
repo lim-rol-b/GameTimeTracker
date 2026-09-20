@@ -41,5 +41,28 @@ public sealed class DatabaseTests : IDisposable
         var invalid=new GameSession{GameId="missing",StartTime=t,LastCheckpoint=t};
         Assert.Throws<SqliteException>(()=>db.SaveSessions([valid,invalid]));Assert.Empty(db.GetSessions());
     }
+    [Fact] public void IncrementalCheckpointsPreserveTailTransitionsAndRetryAtomically()
+    {
+        var db=new TrackerDatabase(DatabasePath);var game=new Game{Name="Incremental"};
+        db.SaveGame(game,[new(){GameId=game.Id,ExecutableName="game.exe"}]);
+        var t=DateTimeOffset.UtcNow;var manager=new SessionManager();
+        var session=manager.Start(game.Id,t,new(true,t));
+        var counts=new Dictionary<string,int>();
+        manager.Advance(game.Id,t.AddSeconds(30),new(true,t));
+        db.SaveSessions(manager.Sessions,counts);counts[session.Id]=session.Segments.Count;
+        manager.Advance(game.Id,t.AddSeconds(70),new(false,t));
+        var invalid=new GameSession{GameId="missing",StartTime=t,LastCheckpoint=t};
+        Assert.Throws<SqliteException>(()=>db.SaveSessions([session,invalid],counts));
+        Assert.Equal(30,Assert.Single(db.GetSessions()).RunningDuration);
+        db.SaveSessions(manager.Sessions,counts);counts[session.Id]=session.Segments.Count;
+        manager.Advance(game.Id,t.AddSeconds(80),new(false,t));
+        db.SaveSessions(manager.Sessions,counts);counts[session.Id]=session.Segments.Count;
+        var ended=manager.Stop(game.Id,t.AddSeconds(90))!;
+        db.SaveSessions([ended],counts);db.SaveSessions([ended],counts);
+        var stored=Assert.Single(db.GetSessions());
+        Assert.Equal(60,stored.ActiveDuration);Assert.Equal(10,stored.IdleDuration);
+        Assert.Equal(20,stored.BackgroundDuration);Assert.Equal(90,stored.RunningDuration);
+        Assert.Equal(3,stored.Segments.Count);Assert.Equal(ended.EndTime,stored.EndTime);
+    }
     public void Dispose(){SqliteConnection.ClearAllPools();if(Directory.Exists(_directory))Directory.Delete(_directory,true);}
 }

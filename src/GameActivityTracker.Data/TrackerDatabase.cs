@@ -76,7 +76,10 @@ public sealed class TrackerDatabase : IGameRepository, ISessionRepository, ISett
         using var c = Open(); using var tx = c.BeginTransaction();
         Execute(c,tx,"DELETE FROM Games WHERE Id=$id",("$id",id)); tx.Commit();
     }
-    public void SaveSessions(IEnumerable<GameSession> sessions)
+    public void SaveSessions(IEnumerable<GameSession> sessions) => SaveSessions(sessions,null);
+    // Tracking segments are append-only except for the end of the final segment.
+    // Callers advance these counts only after the entire transaction succeeds.
+    public void SaveSessions(IEnumerable<GameSession> sessions,IReadOnlyDictionary<string,int>? persistedSegmentCounts)
     {
         using var c = Open(); using var tx = c.BeginTransaction();
         foreach (var s in sessions)
@@ -86,11 +89,16 @@ public sealed class TrackerDatabase : IGameRepository, ISessionRepository, ISett
                 ON CONFLICT(Id) DO UPDATE SET EndTime=$end,LastCheckpoint=$checkpoint,EndReason=$reason
                 """,("$id",s.Id),("$game",s.GameId),("$start",Time(s.StartTime)),("$end",s.EndTime is {} end ? Time(end):null),
                 ("$checkpoint",Time(s.LastCheckpoint)),("$source",s.Source),("$reason",s.EndReason));
-            foreach (var seg in s.Segments)
+            var start=persistedSegmentCounts is not null && persistedSegmentCounts.TryGetValue(s.Id,out var count)
+                && count<=s.Segments.Count ? Math.Max(0,count-1) : 0;
+            for(var i=start;i<s.Segments.Count;i++)
+            {
+                var seg=s.Segments[i];
                 Execute(c,tx,"""
                     INSERT INTO Segments VALUES($id,$session,$start,$end,$state)
                     ON CONFLICT(Id) DO UPDATE SET EndTime=$end
                     """,("$id",seg.Id),("$session",s.Id),("$start",Time(seg.StartTime)),("$end",Time(seg.EndTime)),("$state",seg.State.ToString()));
+            }
         }
         tx.Commit();
     }

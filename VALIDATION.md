@@ -101,3 +101,19 @@ Windows 路径查询改为 PROCESS_QUERY_LIMITED_INFORMATION + QueryFullProcessI
 本机为避免受限环境的 MSBuild 子进程阻塞，编译附加了 `-m:1 -p:UseSharedCompilation=false --disable-build-servers`；这是构建执行参数，不改变程序行为或编译目标。SDK 与 NuGet 缓存在临时目录中，不是项目运行时依赖。发布目录已带 Windows .NET Runtime 和 SQLite 原生依赖。
 
 测试涵盖核心逻辑与真实 SQLite 持久化／事务，不将“测试通过”扩张解释为 Windows 全平台端到端验收通过。Windows CI 文件已创建，未声称已经在远程 CI 执行。
+
+## 2026-09-20：体积与后台资源优化（本地）
+
+- .NET SDK 8.0.425，macOS arm64，Windows x64 交叉编译：0 警告、0 错误。
+- xUnit：65 项通过，0 失败。新增会话成员缓存、增量检查点片段边界与失败事务重试测试。
+- 已发布并核验两种包的目录布局、apphost 相对路径绑定、runtimeconfig 和 ZIP 完整性。全部 XAML 与修改前字节一致。
+- `artifacts/GameActivityTracker-optimized-win-x64.zip`：71,198,425 字节；解压 171,455,416 字节。
+- `artifacts/GameActivityTracker-optimized-win-x64-lite.zip`：1,589,116 字节；解压 3,924,478 字节。另需系统安装 .NET 8 Desktop Runtime x64，运行库占用不包含在轻量包大小内。
+- Windows 原生进程枚举、主窗口延迟创建/托盘恢复、压缩后启动检查已加入 CI，但本次尚未在 Windows 执行。UI 文件不变不等于 Windows 行为已经全面验证。
+- 后台内存降幅与 NTFS 压缩后的磁盘占用尚无实机测量，不给出估算值作为结果。测量方式见 PERFORMANCE.md 和 scripts/measure-memory.ps1。
+
+## 2026-09-20：v1.0.2 发布补充
+
+- 用户反馈：后台内存已下降至约 96 MB。该数值来自用户实测；未提供测量口径和机器配置，不推算统一降幅或所有机器的上限。
+- v1.0.2 同时提供免安装版和轻量版；轻量版要求 .NET 8 Desktop Runtime（Windows x64），发布说明、README 和包内说明均注明。
+- Windows CI 同时构建两种包，发布资产采用对应提交的 CI 构建产物；最终运行结果见 GitHub Actions 和 Release。

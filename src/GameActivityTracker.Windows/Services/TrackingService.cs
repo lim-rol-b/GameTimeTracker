@@ -20,6 +20,7 @@ public sealed class TrackingService : IDisposable
     private readonly IControllerActivityProvider _controller = new ControllerActivityProvider();
     private readonly CancellationTokenSource _stop = new();
     private readonly List<GameSession> _pending = [];
+    private readonly Dictionary<string,int> _persistedSegmentCounts=[];
     private Task? _worker;
     private TrackerSettings _settings;
     private IReadOnlyList<GameProcessRule> _rules;
@@ -36,7 +37,7 @@ public sealed class TrackingService : IDisposable
     public string? Error { get { lock(_gate) return _error; } }
     public TrackingService(TrackerDatabase database,ITrackerLog log)
     {
-        _database=database; _log=log; _settings=database.GetSettings(); _rules=database.GetRules(); _games=database.GetGames();
+        _database=database; _log=log; _settings=database.GetSettings(); _rules=database.GetRules(); _games=database.GetGames(); _gameNames=_games.ToDictionary(g=>g.Id,g=>g.Name);
         _sessions.IdleThreshold=TimeSpan.FromSeconds(_settings.IdleThresholdSeconds);
         _presence=new ProcessProvider(()=>_rules,()=>_games,log);
         _presence.GameStarted+=(_,e)=>
@@ -57,6 +58,11 @@ public sealed class TrackingService : IDisposable
         lock(_gate) return _sessions.Sessions.Select(s=>new LiveGame(s.GameId,_sessions.State(s.GameId),s.ActiveDuration,s.RunningDuration,
             Math.Max(0,_lastInput is {} input ? (_lastTick-input).TotalSeconds:0))).ToList();
     }
+    public IReadOnlyDictionary<string,string> GameNames()
+    {
+        lock(_gate) return _gameNames;
+    }
+    private IReadOnlyDictionary<string,string> _gameNames=new Dictionary<string,string>();
     public void Reload()
     {
         lock(_gate)
@@ -64,7 +70,7 @@ public sealed class TrackingService : IDisposable
             var now=DateTimeOffset.UtcNow;
             foreach(var s in _sessions.Sessions) _sessions.Advance(s.GameId,now,Observe(s.GameId,now));
             Save(now);
-            _settings=_database.GetSettings(); _rules=_database.GetRules();_games=_database.GetGames();
+            _settings=_database.GetSettings(); _rules=_database.GetRules();_games=_database.GetGames();_gameNames=_games.ToDictionary(g=>g.Id,g=>g.Name);
             _sessions.IdleThreshold=TimeSpan.FromSeconds(_settings.IdleThresholdSeconds);
             _controller.Reset(); _lastScan=DateTimeOffset.MinValue;
         }
@@ -109,7 +115,7 @@ public sealed class TrackingService : IDisposable
             var now=DateTimeOffset.UtcNow;
             var ended=_sessions.Stop(gameId,now,"GameDeleted");
             if(ended is not null) _pending.Add(ended);
-            Save(now);_database.DeleteGame(gameId);_rules=_database.GetRules();_games=_database.GetGames();_lastScan=DateTimeOffset.MinValue;
+            Save(now);_database.DeleteGame(gameId);_rules=_database.GetRules();_games=_database.GetGames();_gameNames=_games.ToDictionary(g=>g.Id,g=>g.Name);_lastScan=DateTimeOffset.MinValue;
         }
     }
     private async Task Run()
@@ -172,7 +178,14 @@ public sealed class TrackingService : IDisposable
     }
     private void Save(DateTimeOffset now)
     {
-        _database.SaveSessions(_pending.Concat(_sessions.Sessions)); _pending.Clear(); _lastSave=now;
+        var sessions=_sessions.Sessions;
+        if(_pending.Count>0 || sessions.Count>0)
+        {
+            _database.SaveSessions(_pending.Concat(sessions),_persistedSegmentCounts);
+            foreach(var session in sessions) _persistedSegmentCounts[session.Id]=session.Segments.Count;
+            foreach(var session in _pending) _persistedSegmentCounts.Remove(session.Id);
+        }
+        _pending.Clear(); _lastSave=now;
     }
     private void EndAll(DateTimeOffset now,string reason)
     {
