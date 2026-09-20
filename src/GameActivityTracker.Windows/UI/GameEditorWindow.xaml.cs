@@ -14,7 +14,7 @@ public partial class GameEditorWindow : Window
     }
     private void Browse(object sender,RoutedEventArgs e)
     {
-        var dialog=new OpenFileDialog{Filter="Windows executable (*.exe)|*.exe",CheckFileExists=true};
+        var dialog=new OpenFileDialog{Filter="可执行文件 (*.exe)|*.exe",CheckFileExists=true};
         if(dialog.ShowDialog(this)!=true)return;
         Game.ExecutablePath=dialog.FileName;Game.Executable=Path.GetFileName(dialog.FileName);
         if(string.IsNullOrWhiteSpace(Game.Name))Game.Name=Path.GetFileNameWithoutExtension(dialog.FileName);
@@ -44,9 +44,9 @@ public partial class GameEditorWindow : Window
         { MessageBox.Show(this,"Minecraft 游戏目录不存在，请重新选择。");return; }
         Game.Name=Game.Name.Trim();Game.ExecutablePath=Game.ExecutablePath.Trim();Game.Executable=Path.GetFileName(Game.ExecutablePath);
         if(string.IsNullOrWhiteSpace(Game.Name)||Rules.Count==0||Rules.Any(r=>string.IsNullOrWhiteSpace(r.ExecutableName)))
-        {MessageBox.Show(this,"请输入名称，并至少添加一条包含 exe 名称的规则。");return;}
+        {MessageBox.Show(this,"请输入名称，并至少添加一条包含可执行文件名的规则。");return;}
         if(!string.IsNullOrWhiteSpace(Game.SteamAppId)&&(!long.TryParse(Game.SteamAppId,out var appId)||appId<=0))
-        {MessageBox.Show(this,"Steam AppID 应为正整数或留空。");return;}
+        {MessageBox.Show(this,"Steam 应用编号应为正整数或留空。");return;}
         foreach(var r in Rules)
         {
             r.ExecutableName=Path.GetFileName(r.ExecutableName.Trim());

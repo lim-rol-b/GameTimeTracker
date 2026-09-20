@@ -77,7 +77,7 @@ public sealed class SteamLibraryReader
                  Directory.GetParent(selected)?.Name.Equals("steamapps", StringComparison.OrdinalIgnoreCase) == true)
             steamApps = Directory.GetParent(selected)!.FullName;
         if (!Directory.Exists(steamApps))
-            throw new ArgumentException("所选目录中没有 steamapps 文件夹。请选择 SteamLibrary、Steam 安装目录或 steamapps 文件夹。");
+            throw new ArgumentException("所选目录中没有 steamapps 文件夹。请选择 Steam 游戏库、Steam 安装目录或 steamapps 文件夹。");
 
         var common = Path.GetFullPath(Path.Combine(steamApps, "common"));
         var warnings = new List<string>();
@@ -123,7 +123,7 @@ public sealed class SteamLibraryReader
         var visited = 0;
         while (pending.TryPop(out var item))
         {
-            if (++visited > 10000) { warning = "目录较大，扫描已截断；可手动选择 exe。"; break; }
+            if (++visited > 10000) { warning = "目录较大，扫描已截断；可手动选择可执行文件。"; break; }
             try
             {
                 var options = new EnumerationOptions { IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint };
@@ -137,21 +137,21 @@ public sealed class SteamLibraryReader
                         .Contains(name, StringComparer.OrdinalIgnoreCase)) continue;
                     if (RelatedProcessRules.IsLauncher(file) || RelatedProcessRules.IsSharedHost(file)) continue;
                     result.Add(file);
-                    if (result.Count >= 1000) { warning = "可执行文件较多，列表已截断；可手动选择 exe。"; return Rank(result, directory); }
+                    if (result.Count >= 1000) { warning = "可执行文件较多，列表已截断；可手动选择可执行文件。"; return Rank(result, directory); }
                 }
                 foreach (var child in Directory.EnumerateDirectories(item.Path, "*", options))
                 {
                     if (HelperDirectories.Contains(Path.GetFileName(child))) continue;
-                    if (item.Depth >= 16) { warning ??= "部分目录过深，未扫描；可手动选择 exe。"; continue; }
+                    if (item.Depth >= 16) { warning ??= "部分目录过深，未扫描；可手动选择可执行文件。"; continue; }
                     pending.Push((child, item.Depth + 1));
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                warning = "部分目录无法读取；可手动选择 exe。";
+                warning = "部分目录无法读取；可手动选择可执行文件。";
             }
         }
-        if (result.Count == 0) warning ??= "未找到游戏 exe，请手动选择；未完成下载或非 Windows 游戏可能没有 exe。";
+        if (result.Count == 0) warning ??= "未找到游戏主程序，请手动选择；未完成下载或非 Windows 游戏可能没有可执行文件。";
         return Rank(result, directory);
     }
 

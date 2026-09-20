@@ -29,7 +29,7 @@ public partial class App : Application
         base.OnStartup(e);
         var smoke=e.Args.Contains("--smoke-test");
         _instance=new Mutex(true,smoke?@"Local\GameActivityTracker.SmokeTest":@"Local\GameActivityTracker",out _ownsMutex);
-        if(!_ownsMutex){MessageBox.Show("Game Activity Tracker 已在运行。请从系统托盘打开。");Shutdown();return;}
+        if(!_ownsMutex){MessageBox.Show("游戏时长记录器已在运行。请从系统托盘打开。");Shutdown();return;}
         var startupStage="准备数据目录";
         string? logDirectory=null;
         try
@@ -81,7 +81,7 @@ public partial class App : Application
             var details=new List<string>();
             for(Exception? cause=ex;cause is not null;cause=cause.InnerException)
                 details.Add($"{cause.GetType().Name}: {cause.Message}");
-            MessageBox.Show($"启动失败（{startupStage}）：\n{string.Join("\n",details)}\n\n日志目录：{logDirectory ?? "尚未创建"}","Game Activity Tracker",MessageBoxButton.OK,MessageBoxImage.Error);
+            MessageBox.Show($"启动失败（{startupStage}）：\n{string.Join("\n",details)}\n\n日志目录：{logDirectory ?? "尚未创建"}","游戏时长记录器",MessageBoxButton.OK,MessageBoxImage.Error);
             Shutdown(1);
         }
     }
@@ -116,23 +116,23 @@ public partial class App : Application
             _log?.Write("Custom tray icon unavailable; using default icon",ex);
             _trayIcon=(System.Drawing.Icon)System.Drawing.SystemIcons.Application.Clone();
         }
-        _tray=new Forms.NotifyIcon{Icon=_trayIcon,Text="Game Activity Tracker",Visible=true};
+        _tray=new Forms.NotifyIcon{Icon=_trayIcon,Text="游戏时长记录器",Visible=true};
         var menu=new Forms.ContextMenuStrip();
-        menu.Items.Add("Open / 打开",null,(_,_)=>ShowWindow());
-        var status=menu.Items.Add("Tracking Status: 记录中");status.Enabled=false;
-        var game=menu.Items.Add("Current Game: 无");game.Enabled=false;
-        menu.Items.Add(new Forms.ToolStripSeparator());menu.Items.Add("Exit / 退出",null,(_,_)=>ExitApplication());
+        menu.Items.Add("打开",null,(_,_)=>ShowWindow());
+        var status=menu.Items.Add("记录状态：记录中");status.Enabled=false;
+        var game=menu.Items.Add("当前游戏：无");game.Enabled=false;
+        menu.Items.Add(new Forms.ToolStripSeparator());menu.Items.Add("退出",null,(_,_)=>ExitApplication());
         _tray.ContextMenuStrip=menu;_tray.DoubleClick+=(_,_)=>ShowWindow();
         _trayTimer=new(){Interval=TimeSpan.FromSeconds(2)};
         _trayTimer.Tick+=(_,_)=>
         {
-            status.Text=_tracking?.Error is {} error?"Tracking error: "+error:"Tracking Status: "+(_locked||_sleeping?"暂停":"记录中");
+            status.Text=_tracking?.Error is {} error?"记录异常："+error:"记录状态："+(_locked||_sleeping?"暂停":"记录中");
             var live=_tracking?.Snapshot();
-            if(live is null||live.Count==0){game.Text="Current Game: 无";return;}
+            if(live is null||live.Count==0){game.Text="当前游戏：无";return;}
             try
             {
                 var games=_database!.GetGames();
-                game.Text="Current Game: "+string.Join(", ",live.Select(g=>(games.FirstOrDefault(x=>x.Id==g.GameId)?.Name??g.GameId)+" "+g.State));
+                game.Text="当前游戏："+string.Join(", ",live.Select(g=>(games.FirstOrDefault(x=>x.Id==g.GameId)?.Name??g.GameId)+" "+UiText.State(g.State)));
             }
             catch(Exception ex){status.Text="数据库暂时不可读";_log?.Write("Tray metadata read failed",ex);}
         };
@@ -142,7 +142,7 @@ public partial class App : Application
     {
         MainWindow.Hide();
         if(_hiddenNotice)return;_hiddenNotice=true;
-        _tray?.ShowBalloonTip(2500,"Game Activity Tracker","正在后台记录。双击托盘图标打开；右键 Exit 完全退出。",Forms.ToolTipIcon.Info);
+        _tray?.ShowBalloonTip(2500,"游戏时长记录器","正在后台记录。双击托盘图标打开；右键选择“退出”可完全退出。",Forms.ToolTipIcon.Info);
     }
     private void ShowWindow(){MainWindow.Show();MainWindow.WindowState=WindowState.Normal;MainWindow.Activate();}
     private void OnClosing(object? sender,CancelEventArgs e)

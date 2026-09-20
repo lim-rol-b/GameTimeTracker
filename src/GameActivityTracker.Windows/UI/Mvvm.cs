@@ -18,6 +18,6 @@ public sealed class RelayCommand(Action<object?> execute,Func<object?,bool>? can
 }
 public static class DurationFormat
 {
-    public static string Short(double seconds) => seconds<60 ? $"{Math.Floor(seconds):0}s" : seconds<3600 ? $"{seconds/60:0}m" : $"{(int)(seconds/3600)}h {(int)(seconds%3600/60):00}m";
+    public static string Short(double seconds) => seconds<60 ? $"{Math.Floor(seconds):0}秒" : seconds<3600 ? $"{seconds/60:0}分钟" : $"{(int)(seconds/3600)}小时{(int)(seconds%3600/60):00}分钟";
     public static string Clock(double seconds) => $"{(int)(seconds/3600):00}:{(int)(seconds%3600/60):00}:{(int)(seconds%60):00}";
 }

@@ -14,6 +14,6 @@ public partial class SteamLibraryImportWindow : Window
     private void Import(object sender, RoutedEventArgs e)
     {
         try { SelectedGames = _model.Selection(); DialogResult = true; }
-        catch (ArgumentException ex) { MessageBox.Show(this, ex.Message, "请选择游戏 exe", MessageBoxButton.OK, MessageBoxImage.Information); }
+        catch (ArgumentException ex) { MessageBox.Show(this, ex.Message, "请选择游戏主程序", MessageBoxButton.OK, MessageBoxImage.Information); }
     }
 }

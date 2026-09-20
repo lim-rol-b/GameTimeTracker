@@ -23,7 +23,7 @@ public sealed class SteamImportRow : ObservableObject
         set { if (Set(ref _executable, value)) Changed(nameof(Status)); }
     }
     public string Status => AlreadyImported ? "已添加，跳过"
-        : SelectedExecutable is null ? Game.Warning ?? "请选择游戏的主 exe"
+        : SelectedExecutable is null ? Game.Warning ?? "请选择游戏的主程序"
         : Game.Warning ?? "可导入";
 
     public SteamImportRow(InstalledSteamGame game, bool alreadyImported)
@@ -70,8 +70,8 @@ public sealed class SteamLibraryImportViewModel
         BrowseExecutable = new RelayCommand(parameter =>
         {
             if (parameter is not SteamImportRow row || !row.CanImport) return;
-            var dialog = new OpenFileDialog { Filter = "Windows executable (*.exe)|*.exe", CheckFileExists = true,
-                Title = "选择 " + row.Game.Name + " 的游戏 exe" };
+            var dialog = new OpenFileDialog { Filter = "可执行文件 (*.exe)|*.exe", CheckFileExists = true,
+                Title = "选择 " + row.Game.Name + " 的游戏主程序" };
             if (Directory.Exists(row.Game.InstallDirectory)) dialog.InitialDirectory = row.Game.InstallDirectory;
             if (dialog.ShowDialog() == true) row.UseExecutable(dialog.FileName);
         });
@@ -83,8 +83,8 @@ public sealed class SteamLibraryImportViewModel
         if (selected.Count == 0) throw new ArgumentException("请至少勾选一款尚未添加的游戏。");
         foreach (var row in selected)
         {
-            if (row.SelectedExecutable is null) throw new ArgumentException($"请先为 {row.Game.Name} 选择主 exe。");
-            if (!File.Exists(row.SelectedExecutable.Path)) throw new ArgumentException($"{row.Game.Name} 的 exe 已不存在，请重新选择。");
+            if (row.SelectedExecutable is null) throw new ArgumentException($"请先为 {row.Game.Name} 选择主程序。");
+            if (!File.Exists(row.SelectedExecutable.Path)) throw new ArgumentException($"{row.Game.Name} 的可执行文件已不存在，请重新选择。");
         }
         return selected.Select(row => new SteamGameImportSelection(row.Game.AppId, row.Game.Name, row.SelectedExecutable!.Path,row.Game.InstallDirectory)).ToList();
     }

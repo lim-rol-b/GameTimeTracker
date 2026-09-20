@@ -111,8 +111,8 @@ public sealed class DashboardViewModel : ObservableObject
             .OrderByDescending(g=>g.State==ActivityState.ACTIVE)
             .ThenBy(g=>g.GameId,StringComparer.Ordinal)
             .Select(g=>_games.FirstOrDefault(x=>x.Id==g.GameId)?.Name??"正在记录的游戏"));
-        LiveStatus=live.Count==0 ? "等待游戏启动 · 添加游戏后将自动识别" : string.Join("\n",live.Select(g=>$"●  {_games.FirstOrDefault(x=>x.Id==g.GameId)?.Name??g.GameId}   {g.State}    Active {DurationFormat.Clock(g.ActiveSeconds)}    Running {DurationFormat.Clock(g.RunningSeconds)}"+(g.State==ActivityState.IDLE?$"    Idle for {DurationFormat.Clock(g.InputIdleSeconds)}":"")));
-        if(!_importing) Status=_tracking.Error is {} error ? "记录异常，将自动重试："+error : $"本地记录中  ·  {_games.Count} 个游戏  ·  每 {Settings.ProcessScanIntervalSeconds}s 扫描  ·  {TimeZoneInfo.Local.DisplayName}";
+        LiveStatus=live.Count==0 ? "等待游戏启动 · 添加游戏后将自动识别" : string.Join("\n",live.Select(g=>$"●  {_games.FirstOrDefault(x=>x.Id==g.GameId)?.Name??g.GameId}   {UiText.State(g.State)}    活跃 {DurationFormat.Clock(g.ActiveSeconds)}    运行 {DurationFormat.Clock(g.RunningSeconds)}"+(g.State==ActivityState.IDLE?$"    已空闲 {DurationFormat.Clock(g.InputIdleSeconds)}":"")));
+        if(!_importing) Status=_tracking.Error is {} error ? "记录异常，将自动重试："+error : $"本地记录中  ·  {_games.Count} 个游戏  ·  每 {Settings.ProcessScanIntervalSeconds} 秒扫描  ·  {TimeZoneInfo.Local.DisplayName}";
     }
     public async Task Refresh()
     {
@@ -130,10 +130,10 @@ public sealed class DashboardViewModel : ObservableObject
         var zone=TimeZoneInfo.Local; var today=DateOnly.FromDateTime(DateTime.Now);
         var daily=_statistics.Daily(_history,zone);var year=_statistics.Year(_history,zone,Year,today);
         Metrics.Clear();
-        foreach(var metric in new[]{new Metric("TOTAL ACTIVE",DurationFormat.Short(year.ActiveSeconds)),new Metric("ACTIVE DAYS",year.ActiveDays.ToString()),new Metric("SESSIONS",year.SessionCount.ToString()),new Metric("LONGEST SESSION",DurationFormat.Short(year.LongestSession)),new Metric("CURRENT STREAK",year.CurrentStreak+" days"),new Metric("LONGEST STREAK",year.LongestStreak+" days")}) Metrics.Add(metric);
+        foreach(var metric in new[]{new Metric("累计活跃时长",DurationFormat.Short(year.ActiveSeconds)),new Metric("活跃天数",year.ActiveDays.ToString()),new Metric("游玩次数",year.SessionCount.ToString()),new Metric("最长单次游玩",DurationFormat.Short(year.LongestSession)),new Metric("当前连续天数",year.CurrentStreak+" 天"),new Metric("最长连续天数",year.LongestStreak+" 天")}) Metrics.Add(metric);
         Heatmap.Update(Year,daily,_games);
         var weekStart=today.AddDays(-((int)today.DayOfWeek+6)%7);
-        Periods=$"Today  {DurationFormat.Short(daily.GetValueOrDefault(today)?.ActiveSeconds??0)}     This week  {DurationFormat.Short(daily.Values.Where(d=>d.Date>=weekStart && d.Date<=today).Sum(d=>d.ActiveSeconds))}     This month  {DurationFormat.Short(daily.Values.Where(d=>d.Date.Year==today.Year && d.Date.Month==today.Month).Sum(d=>d.ActiveSeconds))}     {Year} running  {DurationFormat.Short(year.RunningSeconds)}";
+        Periods=$"今天  {DurationFormat.Short(daily.GetValueOrDefault(today)?.ActiveSeconds??0)}     本周  {DurationFormat.Short(daily.Values.Where(d=>d.Date>=weekStart && d.Date<=today).Sum(d=>d.ActiveSeconds))}     本月  {DurationFormat.Short(daily.Values.Where(d=>d.Date.Year==today.Year && d.Date.Month==today.Month).Sum(d=>d.ActiveSeconds))}     {Year} 年运行时长  {DurationFormat.Short(year.RunningSeconds)}";
         var selected=SelectedGame?.Game.Id; Games.Clear();
         foreach(var game in _games)
         {
@@ -142,7 +142,7 @@ public sealed class DashboardViewModel : ObservableObject
         }
         SelectedGame=Games.FirstOrDefault(g=>g.Game.Id==selected);
     }
-    public static SessionRow Row(GameSession s,IReadOnlyList<Game> games)=>new(games.FirstOrDefault(g=>g.Id==s.GameId)?.Name??"Unknown",s.StartTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),s.EndTime?.ToLocalTime().ToString("MM-dd HH:mm:ss")??"记录中",DurationFormat.Short(s.ActiveDuration),DurationFormat.Short(s.RunningDuration),DurationFormat.Short(s.IdleDuration),DurationFormat.Short(s.BackgroundDuration),$"{s.Source} / {s.EndReason??"Live"}");
+    public static SessionRow Row(GameSession s,IReadOnlyList<Game> games)=>new(games.FirstOrDefault(g=>g.Id==s.GameId)?.Name??"未知游戏",s.StartTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),s.EndTime?.ToLocalTime().ToString("MM-dd HH:mm:ss")??"记录中",DurationFormat.Short(s.ActiveDuration),DurationFormat.Short(s.RunningDuration),DurationFormat.Short(s.IdleDuration),DurationFormat.Short(s.BackgroundDuration),$"{UiText.Source(s.Source)} / {UiText.EndReason(s.EndReason)}");
     private void OpenDay(DateOnly day)
     {
         var daily=_statistics.Daily(_history,TimeZoneInfo.Local).GetValueOrDefault(day);
@@ -175,9 +175,9 @@ public sealed class DashboardViewModel : ObservableObject
             var scan = manual ? null : await Task.Run(GamePresence.SteamLibraryDiscovery.Scan);
             if (scan is null || scan.Games.Count == 0)
             {
-                var folder=new Microsoft.Win32.OpenFolderDialog { Title=manual ? "选择 SteamLibrary 文件夹" : "未发现已安装游戏，请选择 SteamLibrary 文件夹", Multiselect=false };
+                var folder=new Microsoft.Win32.OpenFolderDialog { Title=manual ? "选择 Steam 游戏库文件夹" : "未发现已安装游戏，请选择 Steam 游戏库文件夹", Multiselect=false };
                 if(folder.ShowDialog(Application.Current.MainWindow)!=true) return;
-                Status="正在读取 SteamLibrary 游戏清单和可执行文件…";
+                Status="正在读取 Steam 游戏库清单和可执行文件…";
                 var previousWarnings=scan?.Warnings;
                 scan=await Task.Run(()=>new SteamLibraryReader().Read(folder.FolderName));
                 if(previousWarnings is not null) scan=scan with { Warnings=previousWarnings.Concat(scan.Warnings).ToList() };
@@ -205,10 +205,10 @@ public sealed class DashboardViewModel : ObservableObject
             await Refresh();
             var message=$"已导入 {imported} 款游戏，跳过 {selected.Count-imported} 款重复游戏。";
             if(reloadError is not null) message+="\n游戏已保存，但记录服务刷新失败；请重启应用："+reloadError;
-            MessageBox.Show(message,"SteamLibrary 导入完成",MessageBoxButton.OK,
+            MessageBox.Show(message,"Steam 游戏库导入完成",MessageBoxButton.OK,
                 reloadError is null?MessageBoxImage.Information:MessageBoxImage.Warning);
         }
-        catch(Exception ex) { MessageBox.Show(ex.Message,"SteamLibrary 导入未完成",MessageBoxButton.OK,MessageBoxImage.Error); }
+        catch(Exception ex) { MessageBox.Show(ex.Message,"Steam 游戏库导入未完成",MessageBoxButton.OK,MessageBoxImage.Error); }
         finally { _importing=false;CommandManager.InvalidateRequerySuggested();UpdateLive(); }
     }
     private int SaveSteamGames(IReadOnlyList<SteamGameImportSelection> selected)
@@ -221,7 +221,7 @@ public sealed class DashboardViewModel : ObservableObject
         foreach(var item in selected)
         {
             if(appIds.Contains(item.AppId)||paths.Contains(item.ExecutablePath)) continue;
-            if(!File.Exists(item.ExecutablePath)) throw new IOException($"{item.Name} 的 exe 已不存在，本次导入未保存，请重新选择。");
+            if(!File.Exists(item.ExecutablePath)) throw new IOException($"{item.Name} 的可执行文件已不存在，本次导入未保存，请重新选择。");
             var game=new Game{Name=item.Name,SteamAppId=item.AppId,InstallDirectory=item.InstallDirectory,ExecutablePath=item.ExecutablePath,Executable=Path.GetFileName(item.ExecutablePath)};
             // The confirmed full path works even when this library isn't registered with Steam.
             batch.Add((game,new[]{new GameProcessRule{GameId=game.Id,ExecutableName=game.Executable,ExecutablePath=game.ExecutablePath}}));

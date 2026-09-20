@@ -3,13 +3,13 @@
   <Grid>
    <Grid.ColumnDefinitions><ColumnDefinition Width="48"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
    <StackPanel Margin="0,30,0,0">
-    <TextBlock Foreground="{DynamicResource TextBrush}" Text="Mon" Height="21" Padding="0,1.5,0,0" FontSize="11"/>
-    <TextBlock Foreground="{DynamicResource TextBrush}" Text="Tue" Height="21" Padding="0,1.5,0,0" FontSize="11"/>
-    <TextBlock Foreground="{DynamicResource TextBrush}" Text="Wed" Height="21" Padding="0,1.5,0,0" FontSize="11"/>
-    <TextBlock Foreground="{DynamicResource TextBrush}" Text="Thu" Height="21" Padding="0,1.5,0,0" FontSize="11"/>
-    <TextBlock Foreground="{DynamicResource TextBrush}" Text="Fri" Height="21" Padding="0,1.5,0,0" FontSize="11"/>
-    <TextBlock Foreground="{DynamicResource TextBrush}" Text="Sat" Height="21" Padding="0,1.5,0,0" FontSize="11"/>
-    <TextBlock Foreground="{DynamicResource TextBrush}" Text="Sun" Height="21" Padding="0,1.5,0,0" FontSize="11"/>
+    <TextBlock Foreground="{DynamicResource TextBrush}" Text="周一" Height="21" Padding="0,1.5,0,0" FontSize="11"/>
+    <TextBlock Foreground="{DynamicResource TextBrush}" Text="周二" Height="21" Padding="0,1.5,0,0" FontSize="11"/>
+    <TextBlock Foreground="{DynamicResource TextBrush}" Text="周三" Height="21" Padding="0,1.5,0,0" FontSize="11"/>
+    <TextBlock Foreground="{DynamicResource TextBrush}" Text="周四" Height="21" Padding="0,1.5,0,0" FontSize="11"/>
+    <TextBlock Foreground="{DynamicResource TextBrush}" Text="周五" Height="21" Padding="0,1.5,0,0" FontSize="11"/>
+    <TextBlock Foreground="{DynamicResource TextBrush}" Text="周六" Height="21" Padding="0,1.5,0,0" FontSize="11"/>
+    <TextBlock Foreground="{DynamicResource TextBrush}" Text="周日" Height="21" Padding="0,1.5,0,0" FontSize="11"/>
    </StackPanel>
    <ScrollViewer x:Name="CalendarScroller" Grid.Column="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" CanContentScroll="False"
     PreviewMouseLeftButtonDown="OnPointerDown" PreviewMouseMove="OnPointerMove" PreviewMouseLeftButtonUp="OnPointerUp" LostMouseCapture="OnCaptureLost" PreviewMouseWheel="OnWheel">
@@ -32,9 +32,9 @@
    </ScrollViewer>
   </Grid>
   <WrapPanel HorizontalAlignment="Right" Margin="0,14,0,0">
-   <TextBlock Foreground="{DynamicResource TextBrush}" Text="Less" FontSize="11" Margin="0,0,8,0"/>
+   <TextBlock Foreground="{DynamicResource TextBrush}" Text="少" FontSize="11" Margin="0,0,8,0"/>
    <Border Background="{DynamicResource Heat0}" Width="12" Height="12" Margin="2"/><Border Background="{DynamicResource Heat1}" Width="12" Height="12" Margin="2"/><Border Background="{DynamicResource Heat2}" Width="12" Height="12" Margin="2"/><Border Background="{DynamicResource Heat3}" Width="12" Height="12" Margin="2"/><Border Background="{DynamicResource Heat4}" Width="12" Height="12" Margin="2"/><Border Background="{DynamicResource Heat5}" Width="12" Height="12" Margin="2"/>
-   <TextBlock Foreground="{DynamicResource TextBrush}" Text="More · 0 / ≤30m / ≤1h / ≤2h / ≤4h / 4h+" FontSize="11" Margin="8,0,0,0"/>
+   <TextBlock Foreground="{DynamicResource TextBrush}" Text="多 · 0 / ≤30分钟 / ≤1小时 / ≤2小时 / ≤4小时 / 超过4小时" FontSize="11" Margin="8,0,0,0"/>
   </WrapPanel>
  </StackPanel>
 </UserControl>

@@ -1,16 +1,16 @@
 <Window x:Class="GameActivityTracker.Windows.UI.SteamLibraryImportWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Title="导入 SteamLibrary" Width="1180" Height="700" MinWidth="940" MinHeight="520" WindowStartupLocation="CenterOwner">
+ Title="导入 Steam 游戏库" Width="1180" Height="700" MinWidth="940" MinHeight="520" WindowStartupLocation="CenterOwner">
  <DockPanel Margin="26">
   <StackPanel DockPanel.Dock="Top">
-   <TextBlock Text="从 SteamLibrary 导入游戏" FontSize="25" FontWeight="SemiBold" Margin="0,0,0,10"/>
+   <TextBlock Text="从 Steam 游戏库导入游戏" FontSize="25" FontWeight="SemiBold" Margin="0,0,0,10"/>
    <TextBlock Text="{Binding LibraryPath}" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap"/>
    <TextBlock Text="{Binding Summary}" Margin="0,12,0,8"/>
-   <TextBlock Text="勾选要添加的游戏并确认主 exe。优先预选与游戏文件夹同名的 exe（忽略空格、符号及大小写）；候选不明确时请自行选择。卸载器、引擎工具及崩溃报告程序已过滤，可用“选择…”手动指定。" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap"/>
+   <TextBlock Text="勾选要添加的游戏并确认主程序。优先预选与游戏文件夹同名的可执行文件（忽略空格、符号及大小写）；候选不明确时请自行选择。卸载器、引擎工具及崩溃报告程序已过滤，可用“选择…”手动指定。" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap"/>
    <TextBlock Text="导入后自动建立完整路径识别规则，开始记录此后的活动；不会导入或推算 Steam 历史时长。" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" Margin="0,6,0,12"/>
    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
-    <Button Content="选中已配置 exe 的游戏" Command="{Binding SelectReady}"/>
+    <Button Content="选中已配置程序的游戏" Command="{Binding SelectReady}"/>
     <Button Content="取消全选" Command="{Binding ClearSelection}"/>
    </StackPanel>
   </StackPanel>
@@ -31,8 +31,8 @@
      </DataTemplate></DataGridTemplateColumn.CellTemplate>
     </DataGridTemplateColumn>
     <DataGridTextColumn Header="游戏" Binding="{Binding Game.Name}" Width="190" IsReadOnly="True"/>
-    <DataGridTextColumn Header="AppID" Binding="{Binding Game.AppId}" Width="90" IsReadOnly="True"/>
-    <DataGridTemplateColumn Header="游戏主 exe" Width="*" MinWidth="200">
+    <DataGridTextColumn Header="应用编号" Binding="{Binding Game.AppId}" Width="90" IsReadOnly="True"/>
+    <DataGridTemplateColumn Header="游戏主程序" Width="*" MinWidth="200">
      <DataGridTemplateColumn.CellTemplate><DataTemplate>
       <ComboBox ItemsSource="{Binding Executables}" SelectedItem="{Binding SelectedExecutable, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanImport}" ToolTip="{Binding SelectedExecutable.Path}" Margin="4,3">
        <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" Foreground="{DynamicResource TextBrush}"/></DataTemplate></ComboBox.ItemTemplate>

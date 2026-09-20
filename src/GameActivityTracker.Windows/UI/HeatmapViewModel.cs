@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -29,8 +28,8 @@ public sealed class HeatmapViewModel : ObservableObject
         for(var day=start;day<=finish;day=day.AddDays(1))
         {
             daily.TryGetValue(day,out var stats);
-            var details=stats is null ? "暂无记录" : string.Join("\n",stats.GameRunningSeconds.OrderByDescending(g=>g.Value).Select(g=>$"{games.FirstOrDefault(x=>x.Id==g.Key)?.Name ?? "Unknown"} · Active {DurationFormat.Short(stats.GameActiveSeconds.GetValueOrDefault(g.Key))}"));
-            var tooltip=$"{day:yyyy-MM-dd}\nActive {DurationFormat.Short(stats?.ActiveSeconds??0)} · Running {DurationFormat.Short(stats?.RunningSeconds??0)}\n\n{details}";
+            var details=stats is null ? "暂无记录" : string.Join("\n",stats.GameRunningSeconds.OrderByDescending(g=>g.Value).Select(g=>$"{games.FirstOrDefault(x=>x.Id==g.Key)?.Name ?? "未知游戏"} · 活跃 {DurationFormat.Short(stats.GameActiveSeconds.GetValueOrDefault(g.Key))}"));
+            var tooltip=$"{day:yyyy-MM-dd}\n活跃 {DurationFormat.Short(stats?.ActiveSeconds??0)} · 运行 {DurationFormat.Short(stats?.RunningSeconds??0)}\n\n{details}";
             updated.Add(new(day,day.Year==year,(Brush)Application.Current.FindResource($"Heat{StatisticsService.HeatLevel(stats?.ActiveSeconds??0)}"),tooltip));
         }
         // Keep the calendar extent and scroll position stable during periodic dashboard refreshes.
@@ -45,7 +44,7 @@ public sealed class HeatmapViewModel : ObservableObject
             for(var month=1;month<=12;month++)
             {
                 var date=new DateOnly(year,month,1);
-                Months.Add(new(date.ToString("MMM",CultureInfo.InvariantCulture),(date.DayNumber-start.DayNumber)/7*CellPitch+2.5));
+                Months.Add(new($"{month}月",(date.DayNumber-start.DayNumber)/7*CellPitch+2.5));
             }
             Changed(nameof(CalendarWidth));
         }
