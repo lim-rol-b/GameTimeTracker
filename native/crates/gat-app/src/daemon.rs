@@ -32,6 +32,7 @@ pub struct Daemon {
     last_mono: Instant,
     last_scan: Option<DateTime<Utc>>,
     last_save: Option<DateTime<Utc>>,
+    save_retry_at: Option<DateTime<Utc>>,
     suspended: bool,
     locked: bool,
     last_input: Option<DateTime<Utc>>,
@@ -69,6 +70,7 @@ impl Daemon {
             last_mono: Instant::now(),
             last_scan: None,
             last_save: None,
+            save_retry_at: None,
             suspended: false,
             locked: false,
             last_input: None,
@@ -162,13 +164,14 @@ impl Daemon {
             }
         }
 
-        if self
+        let periodic_save_due = self
             .last_save
             .map(|last| (now - last).num_seconds() >= 5)
-            .unwrap_or(true)
-            || !self.pending.is_empty()
-        {
-            self.save(now);
+            .unwrap_or(true);
+        let pending_save_due = !self.pending.is_empty()
+            && self.save_retry_at.map(|retry| now >= retry).unwrap_or(true);
+        if periodic_save_due || pending_save_due {
+            let _ = self.save(now);
         }
 
         self.process_commands();
@@ -228,22 +231,29 @@ impl Daemon {
         ActivityObservation::new(is_foreground, self.last_input)
     }
 
-    fn save(&mut self, now: DateTime<Utc>) {
+    fn save(&mut self, now: DateTime<Utc>) -> bool {
         let mut all: Vec<GameSession> = self.pending.clone();
         all.extend(self.sessions.sessions().into_iter().cloned());
-        if let Err(error) = self.database.save_sessions(&all) {
-            self.log
-                .write(&format!("Checkpoint save failed: {}", error));
+        match self.database.save_sessions(&all) {
+            Ok(()) => {
+                self.pending.clear();
+                self.last_save = Some(now);
+                self.save_retry_at = None;
+                true
+            }
+            Err(error) => {
+                self.log.write(&format!("Checkpoint save failed: {}", error));
+                self.save_retry_at = Some(now + chrono::Duration::seconds(5));
+                false
+            }
         }
-        self.pending.clear();
-        self.last_save = Some(now);
     }
 
     fn end_all(&mut self, now: DateTime<Utc>, reason: &str) {
         self.pending.extend(self.sessions.stop_all(now, reason));
         self.presence.reset();
         self.controller.reset();
-        self.save(now);
+        let _ = self.save(now);
     }
 
     fn suspend(&mut self, reason: &str) {
@@ -259,7 +269,7 @@ impl Daemon {
             self.sessions
                 .advance(id, now, ActivityObservation::new(None, None));
         }
-        self.save(now);
+        let _ = self.save(now);
         self.log.write(&format!(
             "{}: observation paused; subsequent time is UNKNOWN",
             reason
@@ -314,7 +324,7 @@ impl Daemon {
             let observation = self.observe(id, now);
             self.sessions.advance(id, now, observation);
         }
-        self.save(now);
+        let _ = self.save(now);
         self.settings = self.database.get_settings()?;
         self.rules = self.database.get_rules()?;
         self.games = self.database.get_games()?;
@@ -333,7 +343,7 @@ impl Daemon {
         if let Some(session) = self.sessions.stop(game_id, now, "GameDeleted") {
             self.pending.push(session);
         }
-        self.save(now);
+        let _ = self.save(now);
         self.database.delete_game(game_id)?;
         self.rules = self.database.get_rules()?;
         self.games = self.database.get_games()?;

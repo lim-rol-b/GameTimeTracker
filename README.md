@@ -66,7 +66,9 @@ macOS / Linux 可以交叉编译 Windows 目标并运行核心测试，但不能
 
 ## 从源码构建
 
-如需直接使用，可前往 [v1.0.1 发布页面](https://github.com/lim-rol-b/GameTimeTracker/releases/tag/v1.0.1) 下载 `GameTimeTracker-1.0.1-win-x64.zip`。完整解压后运行 `GameActivityTracker.exe`，并保留同目录的 `runtime` 文件夹。
+如需直接使用，可前往 [v2.0.0 发布页面](https://github.com/lim-rol-b/GameTimeTracker/releases/tag/v2.0.0) 下载 `GameTimeTracker-2.0.0-win-x64.zip`。完整解压后运行 `GameActivityTracker.exe`，并保留同目录的 `runtime` 文件夹。
+
+v2 将记录引擎迁移为 Rust：默认保留完整的进程扫描、关联进程发现和原有采样设置；`--lightweight` 仅在明确指定时启用降低扫描频率的模式。Rust 引擎使用 Windows GUI 子系统，开机自启不会弹出控制台黑框。引擎先取得单实例再恢复数据库，避免查看器误结束正在记录的会话。
 
 在仓库根目录执行：
 
@@ -165,7 +167,7 @@ scripts/                         # 发布、原生构建与冒烟检查
 
 ## 验证与限制
 
-C# 跟踪引擎及其测试工程已删除，逻辑由 Rust 工作区接管：`cargo test --manifest-path native/Cargo.toml --workspace` 当前为 **56 项通过**，覆盖进程匹配、Minecraft 目录识别、统计（含 DST）、持久化与设置兼容。历史 C# 验证记录见 [VALIDATION.md](VALIDATION.md)。
+C# 跟踪引擎及其测试工程已删除，逻辑由 Rust 工作区接管：`cargo test --manifest-path native/Cargo.toml --workspace` 当前为 **57 项通过**，覆盖进程匹配、Steam App ID、Minecraft 目录识别、统计（含 DST）、持久化与设置兼容。历史 C# 验证记录见 [VALIDATION.md](VALIDATION.md)。
 
 - Windows 实机的 Apex、PCL、反作弊权限、主题切换和鼠标交互仍需验证；交叉编译成功不代表实机运行验证完成。
 - 进程检测采用轮询，短暂进程可能遗漏；后台运行时间不等于实际游玩时间。

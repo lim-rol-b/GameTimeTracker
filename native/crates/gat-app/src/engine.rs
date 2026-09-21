@@ -137,7 +137,19 @@ impl PresenceEngine {
 
         let mut next: HashMap<String, HashSet<i32>> = HashMap::new();
         let mut seen: HashSet<i32> = HashSet::new();
-        for snapshot in self.scanner.scan() {
+        let steam_roots: Vec<(String, String)> = games
+            .iter()
+            .filter_map(|game| {
+                Some((
+                    game.install_directory.as_ref()?.clone(),
+                    game.steam_app_id.as_ref()?.clone(),
+                ))
+            })
+            .collect();
+        for mut snapshot in self.scanner.scan() {
+            if snapshot.steam_app_id.is_none() {
+                snapshot.steam_app_id = steam_app_id_for_path(snapshot.full_path.as_deref(), &steam_roots);
+            }
             let stem = executable_stem(&snapshot.executable_name).to_lowercase();
             if !names.contains(&stem) {
                 continue;
@@ -365,6 +377,18 @@ fn blank(value: &Option<String>) -> bool {
         .unwrap_or(true)
 }
 
+fn steam_app_id_for_path(path: Option<&str>, roots: &[(String, String)]) -> Option<String> {
+    let path = path?.replace('/', "\\").to_lowercase();
+    roots.iter().find_map(|(root, app_id)| {
+        let root = root
+            .trim_end_matches(|ch| ch == '\\' || ch == '/')
+            .replace('/', "\\")
+            .to_lowercase();
+        let prefix = format!("{}\\", root);
+        path.starts_with(&prefix).then(|| app_id.clone())
+    })
+}
+
 /// Mirror of Path.GetFileNameWithoutExtension for both separators.
 pub fn executable_stem(name: &str) -> String {
     let file = name.rsplit(['/', '\\']).next().unwrap_or(name);
@@ -383,5 +407,12 @@ mod tests {
         assert_eq!(executable_stem("game.exe"), "game");
         assert_eq!(executable_stem(r"C:\Games\App.EXE"), "App");
         assert_eq!(executable_stem("noext"), "noext");
+    }
+
+    #[test]
+    fn derives_steam_app_id_from_install_directory() {
+        let roots = vec![(r"C:\Games\Example".to_string(), "123".to_string())];
+        assert_eq!(steam_app_id_for_path(Some(r"c:/games/example/bin/game.exe"), &roots), Some("123".to_string()));
+        assert_eq!(steam_app_id_for_path(Some(r"C:\Games\Other\game.exe"), &roots), None);
     }
 }

@@ -8,9 +8,13 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --manifest-path native/Cargo.toml -p gat-app
       - run: ./scripts/publish-win.ps1
         shell: pwsh
       - run: ./scripts/smoke-test.ps1
+        shell: pwsh
+      - run: ./scripts/smoke-test-native.ps1
         shell: pwsh
       - uses: actions/upload-artifact@v4
         with:

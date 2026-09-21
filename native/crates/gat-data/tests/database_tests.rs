@@ -248,7 +248,7 @@ fn daemon_settings_round_trip_and_default() {
     let temp = TempDir::new("daemon");
     let path = temp.db();
     let db = TrackerDatabase::open(&path).unwrap();
-    assert!(db.get_daemon_settings().unwrap().lightweight_mode);
+    assert!(!db.get_daemon_settings().unwrap().lightweight_mode);
     let mut settings = db.get_daemon_settings().unwrap();
     settings.lightweight_mode = false;
     settings.process_scan_seconds = 9;

@@ -1,3 +1,5 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod cli;
 mod commands;
 mod control;
@@ -55,6 +57,14 @@ fn run_daemon(cli: &Cli, data_directory: &Path) -> anyhow::Result<std::process::
         Arc::new(FileLog::new(paths::log_directory()))
     };
 
+    // Claim ownership before opening or recovering the database. A second engine
+    // must never recover/close sessions owned by the first one.
+    let Some(_instance) =
+        gat_platform::SingleInstance::acquire("Local\\GameActivityTracker.Engine")
+    else {
+        return Ok(std::process::ExitCode::SUCCESS);
+    };
+
     let database = TrackerDatabase::open(data_directory.join("activity.db"))?;
     let recovered = database.recover_open_sessions()?;
     log.write(&format!(
@@ -65,18 +75,9 @@ fn run_daemon(cli: &Cli, data_directory: &Path) -> anyhow::Result<std::process::
     let settings = database.get_settings()?;
     database.save_settings(&settings)?;
     let mut daemon_settings = database.get_daemon_settings()?;
-    if cli.lightweight {
-        daemon_settings.lightweight_mode = true;
-    }
-
-    // The engine uses its own mutex; the WPF viewer keeps its separate
-    // Local\GameActivityTracker mutex and reads live state over the control channel.
-    let Some(_instance) =
-        gat_platform::SingleInstance::acquire("Local\\GameActivityTracker.Engine")
-    else {
-        eprintln!("游戏时长记录器已在运行。");
-        return Ok(std::process::ExitCode::SUCCESS);
-    };
+    // The old Rust preview defaulted this flag to true, which silently disabled
+    // related-process discovery. v2 makes reduced scanning an explicit CLI choice.
+    daemon_settings.lightweight_mode = cli.lightweight;
 
     apply_startup(&settings);
 

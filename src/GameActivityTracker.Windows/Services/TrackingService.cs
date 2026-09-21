@@ -38,7 +38,7 @@ public sealed class TrackingService : IDisposable
         _dataDirectory = Path.GetDirectoryName(database.DatabasePath) ?? AppContext.BaseDirectory;
     }
 
-    public string? Error => QueryStatus()?.Error;
+    public string? Error => QueryStatus()?.Error ?? "后台记录引擎不可用";
 
     /// <summary>Start the native engine when it is not already running (best effort).</summary>
     public void Start()
@@ -171,7 +171,7 @@ public sealed class TrackingService : IDisposable
     public async Task<LiveSnapshot> PollAsync()
     {
         var status = await QueryStatusAsync().ConfigureAwait(false);
-        if (status?.Games is null) return new LiveSnapshot(Array.Empty<LiveGame>(), status?.Error);
+        if (status?.Games is null) return new LiveSnapshot(Array.Empty<LiveGame>(), status?.Error ?? "后台记录引擎不可用");
         var result = new List<LiveGame>(status.Games.Length);
         foreach (var game in status.Games)
             result.Add(new LiveGame(game.GameId, ParseState(game.State), game.ActiveSeconds, game.RunningSeconds, 0));

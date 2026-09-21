@@ -60,7 +60,7 @@ pub struct DaemonSettings {
 impl Default for DaemonSettings {
     fn default() -> Self {
         Self {
-            lightweight_mode: true,
+            lightweight_mode: false,
             show_tray_icon: true,
             process_scan_seconds: 5,
             smoke_test_seconds: 5,

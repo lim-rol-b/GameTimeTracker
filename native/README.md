@@ -25,7 +25,9 @@ Linux（验证核心逻辑；用 mingw 目标对 Windows 平台层做类型检�
     cargo test --manifest-path native/Cargo.toml --workspace
     cargo check --manifest-path native/Cargo.toml -p gat-platform --target x86_64-pc-windows-gnu
 
-release 二进制约 4 MB，无 .NET 运行时依赖。
+release 二进制约 4 MB，无 .NET 运行时依赖。v2 默认使用完整扫描和关联进程发现；只有显式传入 `--lightweight` 才会降低扫描频率并关闭关联进程目录扫描。
+
+Windows release 使用 GUI 子系统，后台启动和开机自启不会创建控制台窗口。`--headless` 适合诊断时使用，错误会写入数据目录的日志文件。
 
 ## 运行
 

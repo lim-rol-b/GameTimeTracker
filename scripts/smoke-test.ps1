@@ -2,6 +2,7 @@ param([string]$Executable = (Join-Path $PSScriptRoot '../artifacts/win-x64/GameA
 $ErrorActionPreference = 'Stop'
 $exe = (Resolve-Path $Executable).Path
 $runtime = Join-Path (Split-Path $exe) 'runtime'
+if (-not (Test-Path (Join-Path (Split-Path $exe) 'gat.exe'))) { throw 'Missing Rust background engine: gat.exe' }
 foreach ($required in @('GameActivityTracker.dll', 'hostfxr.dll', 'hostpolicy.dll', 'coreclr.dll', 'e_sqlite3.dll')) {
     if (-not (Test-Path (Join-Path $runtime $required))) { throw "Missing runtime dependency: $required" }
 }

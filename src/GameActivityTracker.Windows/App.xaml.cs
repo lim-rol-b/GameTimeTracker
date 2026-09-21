@@ -42,7 +42,8 @@ public partial class App : Application
             Directory.CreateDirectory(logDirectory);_log=new(logDirectory);
             startupStage="初始化数据库";
             _database=new(Path.Combine(directory,"activity.db"));
-            var recovered=_database.RecoverOpenSessions();_log.Write($"Startup: recovered {recovered} session(s) at persisted checkpoint");
+            // The Rust engine is the sole session writer and performs recovery after
+            // acquiring its engine mutex. The viewer must not close an open session.
             var settings=_database.GetSettings();
             _database.SaveSettings(settings); // Persist the initial year for existing installations.
             _theme=new ThemeService();
