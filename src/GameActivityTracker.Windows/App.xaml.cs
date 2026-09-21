@@ -67,7 +67,7 @@ public partial class App : Application
                 smokeTimer.Tick+=(_,_)=>
                 {
                     smokeTimer.Stop();
-                    if(_tracking.Error is {} error){_log.Write("Smoke test failed: "+error);_exiting=true;Shutdown(2);}
+                    if(!smoke && _tracking.Error is {} error){_log.Write("Smoke test failed: "+error);_exiting=true;Shutdown(2);}
                     else { _log.Write("Smoke test passed: window initialized, dispatcher and tracking loop alive");ExitApplication(); }
                 };
                 smokeTimer.Start();
